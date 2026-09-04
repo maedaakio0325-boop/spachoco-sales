@@ -456,6 +456,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     { key: 'visit4', label: '4回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['4回目','４回目'] },
     { key: 'visit5', label: '5回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['5回目','５回目'] },
     { key: 'point', label: 'ポイント', kind: 'metric', type: 'number', agg: 'sum', syn: ['point','ポイント','獲得ポイント'] },
+    { key: 'drink_back', label: 'ドリンクバック', kind: 'metric', type: 'money', agg: 'sum', syn: ['ドリバ','ドリンクバック','ドリンクバッグ','drinkback','ドリンク バック'] },
     // --- 伝票（明細）型で使う ---
     { key: 'customer', label: 'お客様名', kind: 'ticket', type: 'text', syn: ['客名','お客様氏名','お客様指名','お客様名','顧客名','お客様','顧客','お客','customer'] },
     { key: 'amount', label: '金額', kind: 'ticket', type: 'money', agg: 'sum', syn: ['金額','会計金額','売上(日)','売上金','支払額','合計金額','amount','価格','料金'] },
@@ -1714,6 +1715,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     { key: 'visit4', label: '4回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['4回目','４回目'] },
     { key: 'visit5', label: '5回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['5回目','５回目'] },
     { key: 'point', label: 'ポイント', kind: 'metric', type: 'number', agg: 'sum', syn: ['point','ポイント','獲得ポイント'] },
+    { key: 'drink_back', label: 'ドリンクバック', kind: 'metric', type: 'money', agg: 'sum', syn: ['ドリバ','ドリンクバック','ドリンクバッグ','drinkback','ドリンク バック'] },
     // --- 伝票（明細）型で使う ---
     { key: 'customer', label: 'お客様名', kind: 'ticket', type: 'text', syn: ['客名','お客様氏名','お客様指名','お客様名','顧客名','お客様','顧客','お客','customer'] },
     { key: 'amount', label: '金額', kind: 'ticket', type: 'money', agg: 'sum', syn: ['金額','会計金額','売上(日)','売上金','支払額','合計金額','amount','価格','料金'] },
@@ -4060,7 +4062,10 @@ function viewMeeting(main) {
     pace ? kpi('必要日平均', yen(pace), days + '日営業想定') : null,
     kpi('組数', num(sumOf(mRows, 'group_count')) + ' 組'),
     kpi('客数', num(sumOf(mRows, 'customer_count')) + ' 名'),
-    kpi('客単価', yen(sumOf(mRows, 'customer_count') ? Math.round(gross / sumOf(mRows, 'customer_count')) : 0))));
+    kpi('客単価', yen(sumOf(mRows, 'customer_count') ? Math.round(gross / sumOf(mRows, 'customer_count')) : 0)),
+    kpi('新規', num(sumOf(mRows, 'new_count')) + ' 名'),
+    kpi('リピート', num(sumOf(mRows, 'repeat_count')) + ' 名'),
+    kpi('ドリンクバック', yen(sumOf(mRows, 'drink_back')))));
 
   var split = h('div', { class: 'split' });
   // 売上ランク別人数
@@ -4189,7 +4194,9 @@ function viewCastRank(main) {
   list.sort(function (a, b) { return (b.metrics.gross || 0) - (a.metrics.gross || 0); });
   var t2 = h('table');
   t2.appendChild(h('thead', {}, h('tr', {}, h('th', {}, '順位'), h('th', {}, 'キャスト'), h('th', {}, '店舗'), h('th', {}, '役職'),
-    h('th', { class: 'n' }, '税込総売上'), h('th', { class: 'n' }, '小計売上'), h('th', { class: 'n' }, '指名'), h('th', { class: 'n' }, '出勤'), h('th', {}, ''))));
+    h('th', { class: 'n' }, '税込総売上'), h('th', { class: 'n' }, '小計売上'), h('th', { class: 'n' }, '指名'),
+    h('th', { class: 'n' }, '新規'), h('th', { class: 'n' }, 'リピート'), h('th', { class: 'n' }, 'ドリバ'),
+    h('th', { class: 'n' }, '出勤'), h('th', {}, ''))));
   var tb = h('tbody');
   list.forEach(function (t, i) {
     tb.appendChild(h('tr', { class: t.excluded ? 'row-off' : '' },
@@ -4199,6 +4206,9 @@ function viewCastRank(main) {
       h('td', { class: 'n', text: num(Math.round(t.metrics.gross || 0)) }),
       h('td', { class: 'n', text: num(Math.round(t.metrics.subtotal || 0)) }),
       h('td', { class: 'n', text: num(t.metrics.nomination_count || 0) }),
+      h('td', { class: 'n', text: num(t.metrics.new_count || 0) }),
+      h('td', { class: 'n', text: num(t.metrics.repeat_count || 0) }),
+      h('td', { class: 'n', text: num(Math.round(t.metrics.drink_back || 0)) }),
       h('td', { class: 'n', text: num(t.metrics.attendance || 0) }),
       h('td', {}, h('button', { class: 'btn sm ghost', onclick: function () { showCastDetail(t); } }, '詳細'))));
   });
@@ -4333,8 +4343,9 @@ function viewRoster(main) {
   var t = h('table');
   var tn2 = tenureMap();
   t.appendChild(h('thead', {}, h('tr', {}, h('th', {}, 'キャスト'), h('th', {}, '店舗'), h('th', {}, '役職'), h('th', {}, '在籍'),
-    h('th', { class: 'n' }, '税込総売上'), h('th', { class: 'n' }, '小計売上'), h('th', { class: 'n' }, '指名'), h('th', { class: 'n' }, '出勤'),
-    h('th', {}, '対象外'), h('th', {}, ''))));
+    h('th', { class: 'n' }, '税込総売上'), h('th', { class: 'n' }, '小計売上'), h('th', { class: 'n' }, '指名'),
+    h('th', { class: 'n' }, '新規'), h('th', { class: 'n' }, 'リピート'), h('th', { class: 'n' }, 'ドリバ'),
+    h('th', { class: 'n' }, '出勤'), h('th', {}, '対象外'), h('th', {}, ''))));
   var tb = h('tbody');
   list.forEach(function (x) {
     tb.appendChild(h('tr', { class: x.excluded ? 'row-off' : '' },
@@ -4344,6 +4355,9 @@ function viewRoster(main) {
       h('td', { class: 'n', text: num(Math.round(x.metrics.gross || 0)) }),
       h('td', { class: 'n', text: num(Math.round(x.metrics.subtotal || 0)) }),
       h('td', { class: 'n', text: num(x.metrics.nomination_count || 0) }),
+      h('td', { class: 'n', text: num(x.metrics.new_count || 0) }),
+      h('td', { class: 'n', text: num(x.metrics.repeat_count || 0) }),
+      h('td', { class: 'n', text: num(Math.round(x.metrics.drink_back || 0)) }),
       h('td', { class: 'n', text: num(x.metrics.attendance || 0) }),
       h('td', {}, h('input', {
         type: 'checkbox', checked: x.excluded ? 'checked' : null,
