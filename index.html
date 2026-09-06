@@ -401,7 +401,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // 指名者欄に入る「店」「フリー」など（個人ではなく店舗の売上）
-  var STORE_LEVEL = ['店','店1','店2','店３','店3','店4','フリー','ふりー','free','ヘルプ','店舗','未指名','なし','その他','店内'];
+  var STORE_LEVEL = ['店','店1','店2','店３','店3','店4','フリー','ふりー','free','ヘルプ','店舗','未指名','なし','その他','店内',
+    'ホスログ','ヒメパス','ホスパラ','ホスホス','媒体','案内所','内勤','運営','ウェイター','スタッフ','キッチン','送り'];
   function isStoreLevelName(v) {
     if (isBlank(v)) return false;
     var k = nameKey(v);
@@ -1675,7 +1676,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   }
 
   // 指名者欄に入る「店」「フリー」など（個人ではなく店舗の売上）
-  var STORE_LEVEL = ['店','店1','店2','店３','店3','店4','フリー','ふりー','free','ヘルプ','店舗','未指名','なし','その他','店内'];
+  var STORE_LEVEL = ['店','店1','店2','店３','店3','店4','フリー','ふりー','free','ヘルプ','店舗','未指名','なし','その他','店内',
+    'ホスログ','ヒメパス','ホスパラ','ホスホス','媒体','案内所','内勤','運営','ウェイター','スタッフ','キッチン','送り'];
   function isStoreLevelName(v) {
     if (isBlank(v)) return false;
     var k = nameKey(v);
@@ -3204,6 +3206,17 @@ function commitImport() {
     }
   });
   if (addedCasts) Store.log('マスタ自動登録', 'casts', addedCasts + '名をExcelから追加');
+  // 「店」「店2」「ホスログ」等は個人ではないので、初回に自動で対象外にする
+  var autoEx = 0;
+  IW.rows.forEach(function (r) {
+    if (!r.store || !r.castKey) return;
+    if (!Core.isStoreLevelName(r.cast)) return;
+    if (isExcluded(r.store, r.castKey)) return;
+    d.exclusions[exKey(r.store, r.castKey)] = true;
+    autoEx++;
+  });
+  if (autoEx) Store.log('自動で対象外', 'casts', autoEx + '件（店・媒体など個人でない区分）');
+  job.autoExcluded = autoEx;
   job.castsAdded = addedCasts;
 
   IW.rows.forEach(function (r) {
