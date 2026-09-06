@@ -457,6 +457,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     { key: 'visit5', label: '5回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['5回目','５回目'] },
     { key: 'point', label: 'ポイント', kind: 'metric', type: 'number', agg: 'sum', syn: ['point','ポイント','獲得ポイント'] },
     { key: 'drink_back', label: 'ドリンクバック', kind: 'metric', type: 'money', agg: 'sum', syn: ['ドリバ','ドリンクバック','ドリンクバッグ','drinkback','ドリンク バック'] },
+    { key: 'new_groups', label: '新規組数', kind: 'metric', type: 'int', agg: 'sum', syn: ['新規組数','新規組数（all）','新規組数(all)'] },
+    { key: 'kokyaku', label: '顧客人数', kind: 'metric', type: 'int', agg: 'sum', syn: ['顧客','顧客人数'] },
+    { key: 'new_kokyaku', label: '新顧客数', kind: 'metric', type: 'int', agg: 'sum', syn: ['新顧客','新顧客数'] },
     // --- 伝票（明細）型で使う ---
     { key: 'customer', label: 'お客様名', kind: 'ticket', type: 'text', syn: ['客名','お客様氏名','お客様指名','お客様名','顧客名','お客様','顧客','お客','customer'] },
     { key: 'amount', label: '金額', kind: 'ticket', type: 'money', agg: 'sum', syn: ['金額','会計金額','売上(日)','売上金','支払額','合計金額','amount','価格','料金'] },
@@ -1144,6 +1147,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function deriveMetrics(rows) {
     rows.forEach(function (r) {
       var m = r.metrics || {};
+      // 新規組数 = 新規 + 新枝 + 枝（各店の月報「新規組数（ALL）」と一致する定義）
+      if (m.new_groups === undefined) {
+        var ng = 0, hasNg = false;
+        ['new_count', 'shinshi', 'eda'].forEach(function (k) {
+          if (typeof m[k] === 'number') { ng += m[k]; hasNg = true; }
+        });
+        if (hasNg) { m.new_groups = ng; r.derived = (r.derived || []).concat(['new_groups']); }
+      }
       if (m.repeat_count === undefined) {
         var v = 0, has = false;
         ['visit2', 'visit3', 'visit4', 'visit5'].forEach(function (k) {
@@ -1720,6 +1731,9 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     { key: 'visit5', label: '5回目', kind: 'metric', type: 'int', agg: 'sum', syn: ['5回目','５回目'] },
     { key: 'point', label: 'ポイント', kind: 'metric', type: 'number', agg: 'sum', syn: ['point','ポイント','獲得ポイント'] },
     { key: 'drink_back', label: 'ドリンクバック', kind: 'metric', type: 'money', agg: 'sum', syn: ['ドリバ','ドリンクバック','ドリンクバッグ','drinkback','ドリンク バック'] },
+    { key: 'new_groups', label: '新規組数', kind: 'metric', type: 'int', agg: 'sum', syn: ['新規組数','新規組数（all）','新規組数(all)'] },
+    { key: 'kokyaku', label: '顧客人数', kind: 'metric', type: 'int', agg: 'sum', syn: ['顧客','顧客人数'] },
+    { key: 'new_kokyaku', label: '新顧客数', kind: 'metric', type: 'int', agg: 'sum', syn: ['新顧客','新顧客数'] },
     // --- 伝票（明細）型で使う ---
     { key: 'customer', label: 'お客様名', kind: 'ticket', type: 'text', syn: ['客名','お客様氏名','お客様指名','お客様名','顧客名','お客様','顧客','お客','customer'] },
     { key: 'amount', label: '金額', kind: 'ticket', type: 'money', agg: 'sum', syn: ['金額','会計金額','売上(日)','売上金','支払額','合計金額','amount','価格','料金'] },
@@ -2407,6 +2421,14 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
   function deriveMetrics(rows) {
     rows.forEach(function (r) {
       var m = r.metrics || {};
+      // 新規組数 = 新規 + 新枝 + 枝（各店の月報「新規組数（ALL）」と一致する定義）
+      if (m.new_groups === undefined) {
+        var ng = 0, hasNg = false;
+        ['new_count', 'shinshi', 'eda'].forEach(function (k) {
+          if (typeof m[k] === 'number') { ng += m[k]; hasNg = true; }
+        });
+        if (hasNg) { m.new_groups = ng; r.derived = (r.derived || []).concat(['new_groups']); }
+      }
       if (m.repeat_count === undefined) {
         var v = 0, has = false;
         ['visit2', 'visit3', 'visit4', 'visit5'].forEach(function (k) {
@@ -4089,7 +4111,9 @@ function viewMeeting(main) {
     kpi('組数', num(sumOf(mRows, 'group_count')) + ' 組'),
     kpi('客数', num(sumOf(mRows, 'customer_count')) + ' 名'),
     kpi('客単価', yen(sumOf(mRows, 'customer_count') ? Math.round(gross / sumOf(mRows, 'customer_count')) : 0)),
-    kpi('新規', num(sumOf(mRows, 'new_count')) + ' 名'),
+    kpi('新規組数', num(sumOf(mRows, 'new_groups')) + ' 組'),
+    kpi('うち新規', num(sumOf(mRows, 'new_count')) + ' 名'),
+    kpi('顧客人数', num(sumOf(mRows, 'kokyaku')) + ' 名'),
     kpi('リピート', num(sumOf(mRows, 'repeat_count')) + ' 名'),
     kpi('ドリンクバック', yen(sumOf(mRows, 'drink_back')))));
 
