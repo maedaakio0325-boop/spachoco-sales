@@ -595,7 +595,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
           if (!ck) continue;
           var sc = 0;
           if (k === ck) sc = 1.0;
-          else if (k.indexOf(ck) >= 0 && ck.length >= 2) sc = 0.85;
+          else if (k.indexOf(ck) >= 0 && ck.length >= 2) {
+            // 「僕らの森」と「僕らの森2」のように片方が他方を含む場合、
+            // より長く一致する方（＝具体的な方）を優先する
+            sc = 0.80 + Math.min(0.15, ck.length * 0.01);
+          }
           else if (similarity(k, ck) >= 0.8) sc = similarity(k, ck) * 0.8;
           // 前方の情報源（ファイル名等）を優先
           sc = sc * (1 - i * 0.02);
@@ -1854,7 +1858,11 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
           if (!ck) continue;
           var sc = 0;
           if (k === ck) sc = 1.0;
-          else if (k.indexOf(ck) >= 0 && ck.length >= 2) sc = 0.85;
+          else if (k.indexOf(ck) >= 0 && ck.length >= 2) {
+            // 「僕らの森」と「僕らの森2」のように片方が他方を含む場合、
+            // より長く一致する方（＝具体的な方）を優先する
+            sc = 0.80 + Math.min(0.15, ck.length * 0.01);
+          }
           else if (similarity(k, ck) >= 0.8) sc = similarity(k, ck) * 0.8;
           // 前方の情報源（ファイル名等）を優先
           sc = sc * (1 - i * 0.02);
