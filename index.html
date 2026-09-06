@@ -3097,7 +3097,7 @@ function validateAll() {
   var rows = [];
   IW.units.forEach(function (u) { if (u.include) u.rows.forEach(function (r) { rows.push(r); }); });
   rows.forEach(function (r) { r.issues = r.issues.filter(function (i) { return i.code === 'BAD_DATE' || i.code === 'BAD_NUMBER'; }); });
-  var res = Core.validate(rows, masters(), existingKeys(), { today: today(), allowUnknownCast: false });
+  var res = Core.validate(rows, masters(), existingKeys(), { today: today(), allowUnknownCast: true });
   IW.rows = res.rows; IW.summary = res.summary;
   return res;
 }
@@ -3159,6 +3159,23 @@ function commitImport() {
     sheets: IW.units.filter(function (u) { return u.include; }).length,
     rows: 0, ok: 0, skipped: 0, overwritten: 0, errors: 0
   };
+  // Excelに出てきたキャストは、マスタに無ければ自動で登録する
+  var addedCasts = 0;
+  IW.rows.forEach(function (r) {
+    if (r._exclude || r.type === 'store' || !r.cast || !r.store) return;
+    var known = d.casts.some(function (c) {
+      return c.store === r.store && (Core.nameKey(c.name) === r.castKey ||
+        (c.aliases || []).some(function (a) { return Core.nameKey(a) === r.castKey; }));
+    });
+    if (!known) {
+      var st = d.stores.filter(function (x) { return x.name === r.store; })[0];
+      d.casts.push({ id: uid('ca'), name: r.cast, store: r.store, storeId: st ? st.id : null, rank: r.rank || '', aliases: [], active: true });
+      addedCasts++;
+    }
+  });
+  if (addedCasts) Store.log('マスタ自動登録', 'casts', addedCasts + '名をExcelから追加');
+  job.castsAdded = addedCasts;
+
   IW.rows.forEach(function (r) {
     if (r._exclude) { job.skipped++; return; }
     if (r.errorCount && !IW.forceErrors) { job.errors++; job.skipped++; return; }
@@ -3674,7 +3691,8 @@ function stepDone(p) {
     h('div', { class: 'bd' },
       h('div', { class: 'kpis' },
         kpi('登録', num(j.ok) + ' 行'), kpi('上書き', num(j.overwritten) + ' 行'),
-        kpi('除外', num(j.skipped) + ' 行'), kpi('エラーで未登録', num(j.errors) + ' 行')),
+        kpi('除外', num(j.skipped) + ' 行'), kpi('エラーで未登録', num(j.errors) + ' 行'),
+        j.castsAdded ? kpi('キャスト自動登録', num(j.castsAdded) + ' 名') : null),
       h('div', { style: 'margin-top:16px;display:flex;gap:8px;flex-wrap:wrap' },
         h('button', { class: 'btn primary', onclick: function () { App.view = 'dashboard'; render(); } }, 'ダッシュボードで確認'),
         h('button', { class: 'btn', onclick: function () { newWizard(); render(); } }, '続けて別のファイルを取り込む'),
