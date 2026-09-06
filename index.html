@@ -574,8 +574,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (m && +m[2] >= 1 && +m[2] <= 12) { year = +m[1]; month = +m[2]; break; }
       m = t.match(/(20\d{2})\s*年/);
       if (m && year === null) year = +m[1];
-      m = t.match(/(?:^|[^0-9])(\d{1,2})\s*月/);
-      if (m && month === null && +m[1] >= 1 && +m[1] <= 12) month = +m[1];
+      m = t.match(/(\d{1,2})\s*月/);
+      if (m && month === null) {
+        var mv = +m[1];
+        // 「僕らの森２8月」→ 半角化で「僕らの森28月」となり 28月 と読めてしまう。1桁に落として読み直す。
+        if (mv > 12 && m[1].length === 2) mv = +m[1].slice(1);
+        if (mv >= 1 && mv <= 12) month = mv;
+      }
     }
     if (month !== null && year === null) year = (new Date()).getFullYear();
     return { year: year, month: month };
@@ -617,7 +622,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
    * 6. シート解析（レイアウト判定・ブロック分割・列ロール推定）
    * =======================================================*/
 
-  var LAYOUT = { TIDY: 'tidy', WIDE_DATE: 'wide_date', TICKET: 'ticket' };
+  var LAYOUT = { TIDY: 'tidy', WIDE_DATE: 'wide_date', TICKET: 'ticket', MONTHLY: 'monthly' };
 
   function scoreHeaderRow(grid, r, width) {
     var hits = 0, filled = 0, best = {}, dateLike = 0, intSeq = 0;
@@ -683,6 +688,51 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return out;
   }
 
+  /** 空行 gap 行以上で区切られた「行のかたまり」を返す */
+  function findRowRuns(grid, r0, r1, c0, c1, gap) {
+    var runs = [], cur = null, blanks = 0;
+    for (var r = r0; r <= r1 && r < grid.length; r++) {
+      var row = grid[r], empty = true;
+      if (row) for (var c = c0; c <= c1; c++) { if (!isBlank(row[c])) { empty = false; break; } }
+      if (empty) {
+        blanks++;
+        if (cur && blanks >= gap) { runs.push(cur); cur = null; }
+      } else {
+        blanks = 0;
+        if (!cur) cur = { s: r, e: r }; else cur.e = r;
+      }
+    }
+    if (cur) runs.push(cur);
+    return runs;
+  }
+
+  var MONEY_ROLE_KEYS = ['gross', 'amount', 'subtotal', 'gross_ex_tax'];
+
+  /**
+   * 表の先頭に「月次サマリー」が別表として置かれているシートを見つける。
+   * 例）店舗管理ブックの「入力」シートは 2〜32行目にキャスト別の
+   *     顧客人数 / 新顧客数 / ポイント だけが並び、30行ほどの空白をはさんで
+   *     その下に日々の明細が続く。同じ表として読むと、月次の値が
+   *     「並び順の日付」（1人目=1日, 2人目=2日 …）に付いてしまう。
+   * 金額列に値が無い先頭のかたまりを、明細から切り離す。
+   */
+  function detectSummarySegment(grid, roles, dataR0, dataR1, c0, c1) {
+    var moneyCols = [];
+    MONEY_ROLE_KEYS.forEach(function (k) { if (roles[k]) moneyCols.push(roles[k].col); });
+    if (!moneyCols.length) return null;
+    var runs = findRowRuns(grid, dataR0, dataR1, c0, c1, 5);
+    if (runs.length < 2) return null;
+    function hasMoney(run) {
+      for (var i = 0; i < moneyCols.length; i++)
+        if (!colIsEmpty(grid, moneyCols[i], run.s, run.e)) return true;
+      return false;
+    }
+    var head = runs[0], rest = runs.slice(1);
+    if (hasMoney(head)) return null;
+    if (!rest.some(hasMoney)) return null;
+    return { r0: head.s, r1: head.e, dataR0: rest[0].s };
+  }
+
   /** ブロックが「表」として成立しているか（名前列＋指標/金額） */
   function blockLooksTabular(grid, headerRow, c0, c1, dataR0, dataR1, dctx) {
     var roles = assignRoles(grid, headerRow, c0, c1, dataR0, dataR1, dctx, null);
@@ -702,7 +752,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       ms.forEach(function (m) {
         var f = FIELD_BY_KEY[m.key];
         var s = m.score;
-        if (f.type === 'money' || f.type === 'int') {
+        if (f.type === 'money' || f.type === 'int' || f.type === 'number') {
           if (prof.n === 0) s *= 0.25; else s *= (0.45 + 0.55 * prof.numRate);
         } else if (f.type === 'date') {
           s *= (0.35 + 0.65 * prof.dateRate);
@@ -867,6 +917,32 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         // 途中に大きな空白があるシートに対応: 役割列を手掛かりに終端を伸ばして再判定
         var dEndFull = dataEndByRoles(headerRow, roles);
         if (dEndFull > dEnd2) { dEnd2 = dEndFull; roles = assignRoles(grid, headerRow, b.c0, b.c1, headerRow + 1, dEnd2, dctx, null); }
+        // 先頭が「月次サマリー」の別表になっている場合は、明細から切り離す。
+        // サマリー領域にしか無い指標列（顧客人数など）を特定できたときだけ分割する。
+        var dStart = headerRow + 1, monthlyBlock = null;
+        var seg = detectSummarySegment(grid, roles, headerRow + 1, dEnd2, b.c0, b.c1);
+        if (seg) {
+          var rolesNarrow = assignRoles(grid, headerRow, b.c0, b.c1, seg.dataR0, dEnd2, dctx, null);
+          var sRoles = assignRoles(grid, headerRow, b.c0, b.c1, seg.r0, seg.r1, dctx, null);
+          var sNameRole = sRoles.cast || rolesNarrow.cast || roles.cast;
+          var sMetrics = {};
+          Object.keys(sRoles).forEach(function (k) {
+            var sf = FIELD_BY_KEY[k];
+            if (!sf || sf.kind !== 'metric') return;
+            if (rolesNarrow[k]) return;                                           // 明細側で使う列は月次に回さない
+            if (!colIsEmpty(grid, sRoles[k].col, seg.dataR0, dEnd2)) return;      // サマリー領域だけにある列に限る
+            sMetrics[k] = sRoles[k];
+          });
+          if (sNameRole && Object.keys(sMetrics).length) {
+            dStart = seg.dataR0;
+            roles = rolesNarrow;
+            monthlyBlock = {
+              layout: LAYOUT.MONTHLY, headerRow: headerRow,
+              dataR0: seg.r0, dataR1: seg.r1, c0: b.c0, c1: b.c1,
+              nameCol: sNameRole.col, roles: sMetrics, label: '月次サマリー', confidence: 0.8
+            };
+          }
+        }
         var hasName = !!(roles.cast || roles.customer);
         var metrics = METRIC_KEYS.filter(function (k) { return roles[k]; });
         // 「お客様名 × 金額」がある表は会計明細（台帳）とみなす。
@@ -874,7 +950,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         var isTicket = (!!roles.customer && (!!roles.amount || !!roles.gross))
           || ((!!roles.amount || !!roles.item || !!roles.payment) && metrics.length <= 1);
         if (isTicket) {
-          roles = assignRoles(grid, headerRow, b.c0, b.c1, headerRow + 1, dEnd2, dctx, LAYOUT.TICKET);
+          roles = assignRoles(grid, headerRow, b.c0, b.c1, dStart, dEnd2, dctx, LAYOUT.TICKET);
         }
         var hasAny = roles.cast || roles.customer || metrics.length || roles.amount;
         if (!hasAny) return;
@@ -891,10 +967,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         conf = Math.min(0.95, 0.25 + 0.12 * used + (roles.cast ? 0.2 : 0) + (roles.date ? 0.12 : 0));
         blocks.push({
           layout: isTicket ? LAYOUT.TICKET : LAYOUT.TIDY,
-          headerRow: headerRow, dataR0: headerRow + 1, dataR1: dEnd2,
+          headerRow: headerRow, dataR0: dStart, dataR1: dEnd2,
           c0: b.c0, c1: b.c1, roles: roles, label: blockLabel,
           confidence: round2(conf)
         });
+        if (monthlyBlock) {
+          blocks.push(monthlyBlock);
+          notes.push('先頭の「月次サマリー」領域（' + (monthlyBlock.dataR0 + 1) + '〜' + (monthlyBlock.dataR1 + 1) +
+            '行）は日別データと切り離し、月単位の値として読み取りました');
+        }
       });
       if (blocks.length > 1) notes.push('1シート内に ' + blocks.length + ' 個の表ブロックを検出しました');
     }
@@ -980,6 +1061,31 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       return { rows: rows, skipped: skipped };
     }
 
+    if (block.layout === LAYOUT.MONTHLY) {
+      var ym = (ctx.year && ctx.month) ? (ctx.year + '-' + pad2(ctx.month)) : null;
+      for (var mr = block.dataR0; mr <= block.dataR1; mr++) {
+        var mv = gridCell(grid, mr, block.nameCol);
+        if (isBlank(mv)) continue;
+        if (isTotalLabel(mv)) { skipped.push({ row: mr, reason: '合計行' }); continue; }
+        var mm = {}, mAny = false;
+        Object.keys(block.roles).forEach(function (mk) {
+          var v = gridCell(grid, mr, block.roles[mk].col);
+          if (isBlank(v)) return;
+          var n = toNumber(v);
+          if (!n.ok) return;
+          mm[mk] = n.value;
+          if (n.value !== 0) mAny = true;
+        });
+        if (!mAny) continue;
+        var mrow = mkRow(storeName, null, String(mv).trim(), mm, src, mr, {});
+        mrow.type = 'monthly';
+        mrow.period = 'month';
+        mrow.ym = ym;
+        rows.push(mrow);
+      }
+      return { rows: rows, skipped: skipped };
+    }
+
     var roles = block.roles || {};
     for (var r2 = block.dataR0; r2 <= block.dataR1; r2++) {
       var row = grid[r2];
@@ -1047,6 +1153,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         tr.hasCols = { group_count: !!roles.group_count, customer_count: !!roles.customer_count };
         if (isStoreLevelName(castV)) { tr.storeLevel = true; tr.castKey = nameKey(castV || ''); }
         tr.customer = custV ? String(custV).trim() : '';
+        // 顧客の同定は「担当キャスト＋客名」。客名だけだと別キャストの同名客が混ざる。
+        tr.customerKey = tr.customer ? nameKey((tr.cast || '') + tr.customer) : '';
         tr.item = extra.item || '';
         tr.payment = extra.payment || '';
         if (block.label) tr.category = String(block.label).trim();
@@ -1186,6 +1294,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var today = options.today || isoToday();
 
     rows.forEach(function (r) {
+      var isMonthly = r.type === 'monthly';
       // 店舗
       if (!r.store) {
         r.issues.push(issue('error', 'NO_STORE', 'store', '店舗を特定できません。取込画面で店舗を指定してください。'));
@@ -1199,16 +1308,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
             near ? { action: 'alias_store', to: near.id, label: near.name } : { action: 'create_store' }));
         }
       }
-      // 日付
+      // 日付（月次サマリーは日付を持たない）
       if (!r.date) {
-        if (options.requireDate !== false) r.issues.push(issue('error', 'NO_DATE', 'date', '日付がありません。'));
+        if (options.requireDate !== false && !isMonthly) r.issues.push(issue('error', 'NO_DATE', 'date', '日付がありません。'));
       } else if (r.date > today) {
         r.issues.push(issue('warn', 'FUTURE_DATE', 'date', '未来の日付です: ' + r.date));
       }
       // キャスト
       if (r.type === 'store') {
         if (!r.cast) r.cast = '（店舗全体）';
-      } else if (r.type === 'cast') {
+      } else if (r.type === 'cast' || isMonthly) {
         if (!r.cast) {
           r.issues.push(issue('error', 'NO_CAST', 'cast', 'キャスト名が空です。'));
         } else {
@@ -1848,8 +1957,13 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       if (m && +m[2] >= 1 && +m[2] <= 12) { year = +m[1]; month = +m[2]; break; }
       m = t.match(/(20\d{2})\s*年/);
       if (m && year === null) year = +m[1];
-      m = t.match(/(?:^|[^0-9])(\d{1,2})\s*月/);
-      if (m && month === null && +m[1] >= 1 && +m[1] <= 12) month = +m[1];
+      m = t.match(/(\d{1,2})\s*月/);
+      if (m && month === null) {
+        var mv = +m[1];
+        // 「僕らの森２8月」→ 半角化で「僕らの森28月」となり 28月 と読めてしまう。1桁に落として読み直す。
+        if (mv > 12 && m[1].length === 2) mv = +m[1].slice(1);
+        if (mv >= 1 && mv <= 12) month = mv;
+      }
     }
     if (month !== null && year === null) year = (new Date()).getFullYear();
     return { year: year, month: month };
@@ -1891,7 +2005,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
    * 6. シート解析（レイアウト判定・ブロック分割・列ロール推定）
    * =======================================================*/
 
-  var LAYOUT = { TIDY: 'tidy', WIDE_DATE: 'wide_date', TICKET: 'ticket' };
+  var LAYOUT = { TIDY: 'tidy', WIDE_DATE: 'wide_date', TICKET: 'ticket', MONTHLY: 'monthly' };
 
   function scoreHeaderRow(grid, r, width) {
     var hits = 0, filled = 0, best = {}, dateLike = 0, intSeq = 0;
@@ -1957,6 +2071,51 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     return out;
   }
 
+  /** 空行 gap 行以上で区切られた「行のかたまり」を返す */
+  function findRowRuns(grid, r0, r1, c0, c1, gap) {
+    var runs = [], cur = null, blanks = 0;
+    for (var r = r0; r <= r1 && r < grid.length; r++) {
+      var row = grid[r], empty = true;
+      if (row) for (var c = c0; c <= c1; c++) { if (!isBlank(row[c])) { empty = false; break; } }
+      if (empty) {
+        blanks++;
+        if (cur && blanks >= gap) { runs.push(cur); cur = null; }
+      } else {
+        blanks = 0;
+        if (!cur) cur = { s: r, e: r }; else cur.e = r;
+      }
+    }
+    if (cur) runs.push(cur);
+    return runs;
+  }
+
+  var MONEY_ROLE_KEYS = ['gross', 'amount', 'subtotal', 'gross_ex_tax'];
+
+  /**
+   * 表の先頭に「月次サマリー」が別表として置かれているシートを見つける。
+   * 例）店舗管理ブックの「入力」シートは 2〜32行目にキャスト別の
+   *     顧客人数 / 新顧客数 / ポイント だけが並び、30行ほどの空白をはさんで
+   *     その下に日々の明細が続く。同じ表として読むと、月次の値が
+   *     「並び順の日付」（1人目=1日, 2人目=2日 …）に付いてしまう。
+   * 金額列に値が無い先頭のかたまりを、明細から切り離す。
+   */
+  function detectSummarySegment(grid, roles, dataR0, dataR1, c0, c1) {
+    var moneyCols = [];
+    MONEY_ROLE_KEYS.forEach(function (k) { if (roles[k]) moneyCols.push(roles[k].col); });
+    if (!moneyCols.length) return null;
+    var runs = findRowRuns(grid, dataR0, dataR1, c0, c1, 5);
+    if (runs.length < 2) return null;
+    function hasMoney(run) {
+      for (var i = 0; i < moneyCols.length; i++)
+        if (!colIsEmpty(grid, moneyCols[i], run.s, run.e)) return true;
+      return false;
+    }
+    var head = runs[0], rest = runs.slice(1);
+    if (hasMoney(head)) return null;
+    if (!rest.some(hasMoney)) return null;
+    return { r0: head.s, r1: head.e, dataR0: rest[0].s };
+  }
+
   /** ブロックが「表」として成立しているか（名前列＋指標/金額） */
   function blockLooksTabular(grid, headerRow, c0, c1, dataR0, dataR1, dctx) {
     var roles = assignRoles(grid, headerRow, c0, c1, dataR0, dataR1, dctx, null);
@@ -1976,7 +2135,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       ms.forEach(function (m) {
         var f = FIELD_BY_KEY[m.key];
         var s = m.score;
-        if (f.type === 'money' || f.type === 'int') {
+        if (f.type === 'money' || f.type === 'int' || f.type === 'number') {
           if (prof.n === 0) s *= 0.25; else s *= (0.45 + 0.55 * prof.numRate);
         } else if (f.type === 'date') {
           s *= (0.35 + 0.65 * prof.dateRate);
@@ -2141,6 +2300,32 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         // 途中に大きな空白があるシートに対応: 役割列を手掛かりに終端を伸ばして再判定
         var dEndFull = dataEndByRoles(headerRow, roles);
         if (dEndFull > dEnd2) { dEnd2 = dEndFull; roles = assignRoles(grid, headerRow, b.c0, b.c1, headerRow + 1, dEnd2, dctx, null); }
+        // 先頭が「月次サマリー」の別表になっている場合は、明細から切り離す。
+        // サマリー領域にしか無い指標列（顧客人数など）を特定できたときだけ分割する。
+        var dStart = headerRow + 1, monthlyBlock = null;
+        var seg = detectSummarySegment(grid, roles, headerRow + 1, dEnd2, b.c0, b.c1);
+        if (seg) {
+          var rolesNarrow = assignRoles(grid, headerRow, b.c0, b.c1, seg.dataR0, dEnd2, dctx, null);
+          var sRoles = assignRoles(grid, headerRow, b.c0, b.c1, seg.r0, seg.r1, dctx, null);
+          var sNameRole = sRoles.cast || rolesNarrow.cast || roles.cast;
+          var sMetrics = {};
+          Object.keys(sRoles).forEach(function (k) {
+            var sf = FIELD_BY_KEY[k];
+            if (!sf || sf.kind !== 'metric') return;
+            if (rolesNarrow[k]) return;                                           // 明細側で使う列は月次に回さない
+            if (!colIsEmpty(grid, sRoles[k].col, seg.dataR0, dEnd2)) return;      // サマリー領域だけにある列に限る
+            sMetrics[k] = sRoles[k];
+          });
+          if (sNameRole && Object.keys(sMetrics).length) {
+            dStart = seg.dataR0;
+            roles = rolesNarrow;
+            monthlyBlock = {
+              layout: LAYOUT.MONTHLY, headerRow: headerRow,
+              dataR0: seg.r0, dataR1: seg.r1, c0: b.c0, c1: b.c1,
+              nameCol: sNameRole.col, roles: sMetrics, label: '月次サマリー', confidence: 0.8
+            };
+          }
+        }
         var hasName = !!(roles.cast || roles.customer);
         var metrics = METRIC_KEYS.filter(function (k) { return roles[k]; });
         // 「お客様名 × 金額」がある表は会計明細（台帳）とみなす。
@@ -2148,7 +2333,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         var isTicket = (!!roles.customer && (!!roles.amount || !!roles.gross))
           || ((!!roles.amount || !!roles.item || !!roles.payment) && metrics.length <= 1);
         if (isTicket) {
-          roles = assignRoles(grid, headerRow, b.c0, b.c1, headerRow + 1, dEnd2, dctx, LAYOUT.TICKET);
+          roles = assignRoles(grid, headerRow, b.c0, b.c1, dStart, dEnd2, dctx, LAYOUT.TICKET);
         }
         var hasAny = roles.cast || roles.customer || metrics.length || roles.amount;
         if (!hasAny) return;
@@ -2165,10 +2350,15 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         conf = Math.min(0.95, 0.25 + 0.12 * used + (roles.cast ? 0.2 : 0) + (roles.date ? 0.12 : 0));
         blocks.push({
           layout: isTicket ? LAYOUT.TICKET : LAYOUT.TIDY,
-          headerRow: headerRow, dataR0: headerRow + 1, dataR1: dEnd2,
+          headerRow: headerRow, dataR0: dStart, dataR1: dEnd2,
           c0: b.c0, c1: b.c1, roles: roles, label: blockLabel,
           confidence: round2(conf)
         });
+        if (monthlyBlock) {
+          blocks.push(monthlyBlock);
+          notes.push('先頭の「月次サマリー」領域（' + (monthlyBlock.dataR0 + 1) + '〜' + (monthlyBlock.dataR1 + 1) +
+            '行）は日別データと切り離し、月単位の値として読み取りました');
+        }
       });
       if (blocks.length > 1) notes.push('1シート内に ' + blocks.length + ' 個の表ブロックを検出しました');
     }
@@ -2254,6 +2444,31 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
       return { rows: rows, skipped: skipped };
     }
 
+    if (block.layout === LAYOUT.MONTHLY) {
+      var ym = (ctx.year && ctx.month) ? (ctx.year + '-' + pad2(ctx.month)) : null;
+      for (var mr = block.dataR0; mr <= block.dataR1; mr++) {
+        var mv = gridCell(grid, mr, block.nameCol);
+        if (isBlank(mv)) continue;
+        if (isTotalLabel(mv)) { skipped.push({ row: mr, reason: '合計行' }); continue; }
+        var mm = {}, mAny = false;
+        Object.keys(block.roles).forEach(function (mk) {
+          var v = gridCell(grid, mr, block.roles[mk].col);
+          if (isBlank(v)) return;
+          var n = toNumber(v);
+          if (!n.ok) return;
+          mm[mk] = n.value;
+          if (n.value !== 0) mAny = true;
+        });
+        if (!mAny) continue;
+        var mrow = mkRow(storeName, null, String(mv).trim(), mm, src, mr, {});
+        mrow.type = 'monthly';
+        mrow.period = 'month';
+        mrow.ym = ym;
+        rows.push(mrow);
+      }
+      return { rows: rows, skipped: skipped };
+    }
+
     var roles = block.roles || {};
     for (var r2 = block.dataR0; r2 <= block.dataR1; r2++) {
       var row = grid[r2];
@@ -2321,6 +2536,8 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
         tr.hasCols = { group_count: !!roles.group_count, customer_count: !!roles.customer_count };
         if (isStoreLevelName(castV)) { tr.storeLevel = true; tr.castKey = nameKey(castV || ''); }
         tr.customer = custV ? String(custV).trim() : '';
+        // 顧客の同定は「担当キャスト＋客名」。客名だけだと別キャストの同名客が混ざる。
+        tr.customerKey = tr.customer ? nameKey((tr.cast || '') + tr.customer) : '';
         tr.item = extra.item || '';
         tr.payment = extra.payment || '';
         if (block.label) tr.category = String(block.label).trim();
@@ -2460,6 +2677,7 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
     var today = options.today || isoToday();
 
     rows.forEach(function (r) {
+      var isMonthly = r.type === 'monthly';
       // 店舗
       if (!r.store) {
         r.issues.push(issue('error', 'NO_STORE', 'store', '店舗を特定できません。取込画面で店舗を指定してください。'));
@@ -2473,16 +2691,16 @@ t.sheetStubs=true}if(t.type=="array"){t.type="binary";var a=xk(e,t);t.type="arra
             near ? { action: 'alias_store', to: near.id, label: near.name } : { action: 'create_store' }));
         }
       }
-      // 日付
+      // 日付（月次サマリーは日付を持たない）
       if (!r.date) {
-        if (options.requireDate !== false) r.issues.push(issue('error', 'NO_DATE', 'date', '日付がありません。'));
+        if (options.requireDate !== false && !isMonthly) r.issues.push(issue('error', 'NO_DATE', 'date', '日付がありません。'));
       } else if (r.date > today) {
         r.issues.push(issue('warn', 'FUTURE_DATE', 'date', '未来の日付です: ' + r.date));
       }
       // キャスト
       if (r.type === 'store') {
         if (!r.cast) r.cast = '（店舗全体）';
-      } else if (r.type === 'cast') {
+      } else if (r.type === 'cast' || isMonthly) {
         if (!r.cast) {
           r.issues.push(issue('error', 'NO_CAST', 'cast', 'キャスト名が空です。'));
         } else {
@@ -2830,7 +3048,7 @@ function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s =
 var Store = {
   data: null, _idb: null, _timer: null,
   defaults: function () {
-    return { stores: [], casts: [], sales: [], details: [], exclusions: {}, targets: {}, imports: [], logs: [], templates: {}, settings: { seeded: false }, v: 3 };
+    return { stores: [], casts: [], sales: [], details: [], monthly: {}, exclusions: {}, targets: {}, imports: [], logs: [], templates: {}, settings: { seeded: false }, v: 4 };
   },
   open: function () {
     return new Promise(function (res) {
@@ -2856,6 +3074,7 @@ var Store = {
     }).then(function (d) {
       self.data = d && d.stores ? d : self.defaults();
       if (!self.data.details) self.data.details = [];
+      if (!self.data.monthly) self.data.monthly = {};
       if (!self.data.exclusions) self.data.exclusions = {};
       if (!self.data.targets) self.data.targets = {};
       return self.data;
@@ -2970,6 +3189,37 @@ function masters() {
     casts: Store.data.casts.filter(function (c) { return c.active !== false; })
   };
 }
+/**
+ * 月次サマリー（顧客人数・新顧客数・ポイント）。
+ * 日別に割り振れない「その月の値」なので、売上データとは別に月×店舗で保持する。
+ */
+function monthlyKey(store, ym) { return store + '|' + ym; }
+function monthlyStats(store, ym) {
+  var d = Store.data.monthly || {}, out = { casts: [], metrics: {}, found: false };
+  Object.keys(d).forEach(function (k) {
+    var m = d[k];
+    if (!m || m.ym !== ym) return;
+    if (store && m.store !== store) return;
+    Object.keys(m.casts || {}).forEach(function (ck) {
+      var c = m.casts[ck];
+      out.casts.push({ store: m.store, castKey: ck, cast: c.cast, metrics: c.metrics || {} });
+      Object.keys(c.metrics || {}).forEach(function (mk) {
+        var v = c.metrics[mk];
+        if (typeof v === 'number' && isFinite(v)) { out.metrics[mk] = (out.metrics[mk] || 0) + v; out.found = true; }
+      });
+    });
+  });
+  return out;
+}
+
+/** 月次サマリーがあればその値、無ければ日別データの合計を表示する */
+function monthlyValue(mstat, rows, key) {
+  if (mstat && mstat.found && mstat.metrics[key] !== undefined) return num(mstat.metrics[key]) + ' 名';
+  var v = 0;
+  (rows || []).forEach(function (r) { var x = r.metrics[key]; if (typeof x === 'number' && isFinite(x)) v += x; });
+  return v ? num(v) + ' 名' : '—';
+}
+
 function existingKeys() {
   var m = {};
   Store.sales().forEach(function (r) { m[[r.store, r.date, r.castKey].join('|')] = r.id; });
@@ -3116,6 +3366,22 @@ function buildRows(u) {
     e.rows.forEach(function (r) { r.unitId = u.id; r.id = uid('r'); all.push(r); });
     u.skipped = u.skipped.concat(e.skipped);
   });
+  // 月次サマリー（日付を持たない、その月の値）は日別データと混ぜない
+  var ymOf = (u.year && u.month) ? (u.year + '-' + String(u.month).padStart(2, '0')) : null;
+  if (!ymOf) {
+    // 表題やファイル名から年月が読めない場合は、実際の行の日付から対象月を決める
+    var ymCount = {}, ymBest = null;
+    all.forEach(function (r) {
+      if (!r.date) return;
+      var k = r.date.slice(0, 7);
+      ymCount[k] = (ymCount[k] || 0) + 1;
+      if (!ymBest || ymCount[k] > ymCount[ymBest]) ymBest = k;
+    });
+    ymOf = ymBest;
+  }
+  u.monthlyRows = all.filter(function (r) { return r.type === 'monthly'; });
+  u.monthlyRows.forEach(function (r) { if (!r.id) r.id = uid('r'); r.unitId = u.id; if (!r.ym) r.ym = ymOf; });
+  all = all.filter(function (r) { return r.type !== 'monthly'; });
   var hasTicket = all.some(function (r) { return r.type === 'ticket'; });
   // 顧客単位の明細は別に保持（顧客ランキング用）
   u.detailRows = hasTicket ? all.filter(function (r) { return r.type === 'ticket' && r.customer; }) : [];
@@ -3129,6 +3395,11 @@ function validateAll() {
   rows.forEach(function (r) { r.issues = r.issues.filter(function (i) { return i.code === 'BAD_DATE' || i.code === 'BAD_NUMBER'; }); });
   var res = Core.validate(rows, masters(), existingKeys(), { today: today(), allowUnknownCast: true });
   IW.rows = res.rows; IW.summary = res.summary;
+  var mrows = [];
+  IW.units.forEach(function (u) { if (u.include) (u.monthlyRows || []).forEach(function (r) { mrows.push(r); }); });
+  mrows.forEach(function (r) { r.issues = []; });
+  Core.validate(mrows, masters(), {}, { today: today(), allowUnknownCast: true, requireDate: false });
+  IW.monthlyRows = mrows;
   return res;
 }
 
@@ -3240,13 +3511,24 @@ function commitImport() {
       if (!r.date || !r.store) return;
       d.details.push({
         id: uid('d'), store: r.store, date: r.date, cast: r.cast, castKey: r.castKey,
-        customer: r.customer || '', amount: r.metrics.gross || 0, item: r.item || '',
+        customer: r.customer || '', customerKey: r.customerKey || Core.nameKey((r.cast || '') + (r.customer || '')),
+        amount: r.metrics.gross || 0, item: r.item || '',
         payment: r.payment || '', importId: job.id, source: r.source, deleted: false
       });
       det++;
     });
   });
   job.details = det; job.detailsReplaced = dropped;
+  // 月次サマリー（顧客人数・新顧客数・ポイント）を 店舗×月 で保存（再取込は置き換え）
+  var mn = 0, mtouched = {};
+  (IW.monthlyRows || []).forEach(function (r) {
+    if (r._exclude || !r.store || !r.ym) return;
+    var mk = monthlyKey(r.store, r.ym);
+    if (!mtouched[mk]) { mtouched[mk] = true; d.monthly[mk] = { store: r.store, ym: r.ym, casts: {}, importId: job.id, at: nowISO() }; }
+    d.monthly[mk].casts[r.castKey || Core.nameKey(r.cast)] = { cast: r.cast, metrics: r.metrics };
+    mn++;
+  });
+  job.monthly = mn;
   var tn = 0;
   Object.keys(IW.targets || {}).forEach(function (k) {
     var t = IW.targets[k];
@@ -3263,6 +3545,7 @@ function rollbackImport(jobId) {
   var d = Store.data, n = 0;
   d.sales.forEach(function (r) { if (r.importId === jobId && !r.deleted) { r.deleted = true; r.deletedAt = nowISO(); n++; } });
   (d.details || []).forEach(function (r) { if (r.importId === jobId && !r.deleted) { r.deleted = true; } });
+  Object.keys(d.monthly || {}).forEach(function (k) { if (d.monthly[k] && d.monthly[k].importId === jobId) delete d.monthly[k]; });
   d.sales.forEach(function (r) { if (r.deletedBy === jobId) { r.deleted = false; delete r.deletedBy; } });
   var job = d.imports.filter(function (j) { return j.id === jobId; })[0];
   if (job) job.rolledBack = nowISO();
@@ -3395,7 +3678,7 @@ function stepMap(p) {
         h('td', {}, u.role === 'primary' ? '●' : ''),
         h('td', {}, h('b', { text: u.sheet })),
         h('td', { class: 'muted', text: { ticket: '会計明細', tidy: '一覧表', wide_date: '日付横並び' }[(u.blocks[0] || {}).layout] || '' }),
-        h('td', { class: 'n', text: num(u.rows.length) }),
+        h('td', { class: 'n', text: num(u.rows.length) + ((u.monthlyRows && u.monthlyRows.length) ? '（＋月次 ' + u.monthlyRows.length + '）' : '') }),
         h('td', { class: 'n', text: yen(g) }),
         h('td', {}, st),
         h('td', {}, u.role === 'primary' ? null : h('button', {
@@ -3722,7 +4005,9 @@ function stepDone(p) {
       h('div', { class: 'kpis' },
         kpi('登録', num(j.ok) + ' 行'), kpi('上書き', num(j.overwritten) + ' 行'),
         kpi('除外', num(j.skipped) + ' 行'), kpi('エラーで未登録', num(j.errors) + ' 行'),
-        j.castsAdded ? kpi('キャスト自動登録', num(j.castsAdded) + ' 名') : null),
+        j.castsAdded ? kpi('キャスト自動登録', num(j.castsAdded) + ' 名') : null,
+        j.details ? kpi('顧客明細', num(j.details) + ' 件') : null,
+        j.monthly ? kpi('月次サマリー', num(j.monthly) + ' 件', '顧客人数・新顧客数・ポイント') : null),
       h('div', { style: 'margin-top:16px;display:flex;gap:8px;flex-wrap:wrap' },
         h('button', { class: 'btn primary', onclick: function () { App.view = 'dashboard'; render(); } }, 'ダッシュボードで確認'),
         h('button', { class: 'btn', onclick: function () { newWizard(); render(); } }, '続けて別のファイルを取り込む'),
@@ -4102,6 +4387,7 @@ function viewMeeting(main) {
   var dw = dlt(wSum, pwSum), dm = prevYm ? dlt(gross, sumOf(pRows, 'gross')) : null;
   var pace = days ? Math.round(target / days) : 0;
   var actualDays = (function () { var s = {}; mRows.forEach(function (r) { if (r.date) s[r.date] = true; }); return Object.keys(s).length; })();
+  var mstat = monthlyStats(store, ym);
   p.appendChild(h('div', { class: 'kpis', style: 'margin-bottom:16px' },
     kpi('今週（' + wk.from.slice(5) + '〜' + wk.to.slice(5) + '）', yen(wSum), dw && ('先週比 ' + dw.t), dw && dw.d),
     kpi('先週', yen(pwSum)),
@@ -4113,7 +4399,8 @@ function viewMeeting(main) {
     kpi('客単価', yen(sumOf(mRows, 'customer_count') ? Math.round(gross / sumOf(mRows, 'customer_count')) : 0)),
     kpi('新規組数', num(sumOf(mRows, 'new_groups')) + ' 組'),
     kpi('うち新規', num(sumOf(mRows, 'new_count')) + ' 名'),
-    kpi('顧客人数', num(sumOf(mRows, 'kokyaku')) + ' 名'),
+    kpi('顧客人数', monthlyValue(mstat, mRows, 'kokyaku'), '月単位の値'),
+    kpi('新顧客数', monthlyValue(mstat, mRows, 'new_kokyaku'), '月単位の値'),
     kpi('リピート', num(sumOf(mRows, 'repeat_count')) + ' 名'),
     kpi('ドリンクバック', yen(sumOf(mRows, 'drink_back')))));
 
@@ -4315,7 +4602,7 @@ function showCastDetail(t) {
 /* ---------- 顧客ランキング（先方 PRIORITY 7） ---------- */
 function viewCustomers(main) {
   var det = filteredDetails();
-  main.appendChild(topbar('顧客', num(det.length) + ' 件の会計明細から集計'));
+  main.appendChild(topbar('顧客', num(det.length) + ' 件の会計明細から集計（担当キャスト＋客名で1人と数えます）'));
   var p = h('div', { class: 'page' }); main.appendChild(p);
   p.appendChild(periodBar(function () { render(); }));
   if (!det.length) {
@@ -4324,19 +4611,19 @@ function viewCustomers(main) {
       h('p', { class: 'muted', style: 'margin:0' }, 'お客様名の入った会計明細（入力シートなど）を取り込むと、ここに顧客ランキングが出ます。'))));
     return;
   }
+  // 顧客は「担当キャスト＋客名」で1人と数える。
+  // 現場のブックも指名客を『碧ゆうか』のように担当込みで管理しているため、
+  // 客名だけでまとめると別キャストの同名客（例: 碧のゆうか / まるのゆうか）が合算されてしまう。
   var m = {};
   det.forEach(function (d) {
-    var k = d.store + '|' + Core.nameKey(d.customer);
-    if (!m[k]) m[k] = { customer: d.customer, store: d.store, casts: {}, total: 0, visits: 0, last: '' };
+    var ck = d.customerKey || Core.nameKey((d.cast || '') + (d.customer || ''));
+    var k = d.store + '|' + ck;
+    if (!m[k]) m[k] = { customer: d.customer, store: d.store, cast: d.cast || '', castKey: d.castKey || '', total: 0, visits: 0, last: '' };
     m[k].total += d.amount || 0; m[k].visits++;
-    if (d.cast) m[k].casts[d.cast] = (m[k].casts[d.cast] || 0) + (d.amount || 0);
+    if (!m[k].cast && d.cast) m[k].cast = d.cast;
     if (d.date > m[k].last) m[k].last = d.date;
   });
-  var arr = Object.keys(m).map(function (k) {
-    var x = m[k];
-    var top = Object.keys(x.casts).sort(function (a, b) { return x.casts[b] - x.casts[a]; })[0] || '';
-    x.mainCast = top; return x;
-  });
+  var arr = Object.keys(m).map(function (k) { var x = m[k]; x.mainCast = x.cast; return x; });
   var min = App.custMin || 0;
   var shown = arr.filter(function (x) { return x.total >= min; }).sort(function (a, b) { return b.total - a.total; });
   var fb = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px' },
@@ -4349,7 +4636,7 @@ function viewCustomers(main) {
   });
   p.appendChild(fb);
   var t = h('table');
-  t.appendChild(h('thead', {}, h('tr', {}, h('th', {}, '順位'), h('th', {}, 'お客様'), h('th', {}, '店舗'), h('th', {}, '主な担当'),
+  t.appendChild(h('thead', {}, h('tr', {}, h('th', {}, '順位'), h('th', {}, 'お客様'), h('th', {}, '店舗'), h('th', {}, '担当'),
     h('th', { class: 'n' }, '売上合計'), h('th', { class: 'n' }, '来店回数'), h('th', { class: 'n' }, '平均単価'), h('th', {}, '最終来店'))));
   var tb = h('tbody');
   shown.slice(0, 400).forEach(function (x, i) {
