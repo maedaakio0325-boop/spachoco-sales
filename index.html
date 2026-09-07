@@ -3181,7 +3181,25 @@ function rosterOf(rows) {
       t.months[mk].attendance += r.metrics.attendance || 0;
     }
   });
-  return Object.keys(m).map(function (k) { return m[k]; });
+  return Object.keys(m).map(function (k) {
+    var t = m[k];
+    // 出勤0日なのに売上があるキャストは、記録不備としてランキング・人数から外す
+    // （店舗の総売上には計上したまま）
+    t.noAttendance = !t.storeLevel && (t.metrics.attendance || 0) === 0 && (t.metrics.gross || 0) > 0;
+    t.hidden = t.excluded || t.noAttendance;
+    return t;
+  });
+}
+
+/** ランキング等に出さないキャストか（店舗の売上合計には影響しない） */
+function isHiddenCast(store, castKey, rows) {
+  if (isExcluded(store, castKey)) return true;
+  var att = 0, gross = 0;
+  (rows || []).forEach(function (r) {
+    if (r.store !== store || r.castKey !== castKey) return;
+    att += r.metrics.attendance || 0; gross += r.metrics.gross || 0;
+  });
+  return att === 0 && gross > 0;
 }
 var IW = null; // import wizard state
 
@@ -3232,13 +3250,24 @@ function existingKeys() {
  *  取込ウィザード
  * =======================================================*/
 function newWizard() {
-  IW = { step: 1, files: [], units: [], rows: [], dupMode: 'overwrite', forceErrors: false, result: null };
+  IW = { step: 1, files: [], units: [], rows: [], dupMode: 'overwrite', forceErrors: false, result: null, errors: [] };
 }
 function sheetsFromArrayBuffer(buf, name) {
   var wb = XLSX.read(buf, { type: 'array', cellDates: false, raw: true });
+  // ここでは展開しない（5店舗×22シートを一度に展開すると画面が固まるため）
   return wb.SheetNames.map(function (n) {
-    return { name: n, grid: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: true }) };
+    return { name: n, _ws: wb.Sheets[n], grid: null };
   });
+}
+
+/** シートを必要になった時点で2次元配列に展開する */
+function gridOf(sh) {
+  if (!sh.grid) {
+    sh.grid = sh._ws
+      ? XLSX.utils.sheet_to_json(sh._ws, { header: 1, raw: true, defval: null, blankrows: true })
+      : [];
+  }
+  return sh.grid;
 }
 function addFiles(fileList) {
   var files = Array.prototype.slice.call(fileList);
@@ -3253,22 +3282,74 @@ function addFiles(fileList) {
       fr.readAsArrayBuffer(f);
     });
   });
-  return Promise.all(jobs).then(function (rs) {
-    rs.filter(Boolean).forEach(function (r) { IW.files.push(r); });
-    analyzeAll();
-  });
+  return jobs.reduce(function (chain, job) {
+    return chain.then(function () {
+      return job.then(function (r) {
+        if (r) IW.files.push(r);
+        render();
+        return new Promise(function (res) { yieldToUI(res); });
+      });
+    });
+  }, Promise.resolve()).then(function () { analyzeAll(); });
 }
 function addParsedFile(name, sheets) { IW.files.push({ name: name, sheets: sheets }); analyzeAll(); }
 
+/**
+ * 画面に処理を譲る（バックグラウンドタブでも止まらない方式）。
+ * setTimeout はタブが非表示だと1秒に1回まで制限されるため、MessageChannel を使う。
+ */
+var _yieldCh = (typeof MessageChannel !== 'undefined') ? new MessageChannel() : null;
+var _yieldQueue = [];
+if (_yieldCh) _yieldCh.port1.onmessage = function () { var fn = _yieldQueue.shift(); if (fn) fn(); };
+function yieldToUI(fn) {
+  if (_yieldCh) { _yieldQueue.push(fn); _yieldCh.port2.postMessage(0); }
+  else setTimeout(fn, 0);
+}
+
 function analyzeAll() {
+  // 大量のシート（5店舗×22シート）でも固まらないよう、1シートずつ処理して画面に譲る
   var ms = masters();
   IW.units = [];
-  IW.files.forEach(function (f) {
-    f.sheets.forEach(function (sh) {
-      if (!sh.grid || !sh.grid.length) return;
-      var a = Core.analyzeSheet(sh.grid, { fileName: f.name, sheetName: sh.name, stores: ms.stores });
+  IW.analyzing = { done: 0, total: 0 };
+  IW.files.forEach(function (f) { IW.analyzing.total += f.sheets.length; });
+  var queue = [];
+  IW.files.forEach(function (f) { f.sheets.forEach(function (sh) { queue.push({ f: f, sh: sh }); }); });
+
+  renderProgress();
+  function renderProgress() {
+    var el = document.getElementById('analyze-progress');
+    if (el) el.textContent = '解析中… ' + IW.analyzing.done + ' / ' + IW.analyzing.total + ' シート';
+  }
+  function step() {
+    var t0 = Date.now();
+    while (queue.length && Date.now() - t0 < 120) {
+      var job = queue.shift();
+      try {
+        analyzeOne(job.f, job.sh, ms);
+      } catch (e) {
+        IW.errors = IW.errors || [];
+        IW.errors.push({ file: job.f.name, sheet: job.sh.name, message: String(e && e.message || e) });
+      }
+      IW.analyzing.done++;
+    }
+    renderProgress();
+    if (queue.length) { yieldToUI(step); return; }
+    IW.analyzing = null;
+    pickPrimarySources();
+    detectTargets();
+    render();
+  }
+  yieldToUI(step);
+}
+
+function analyzeOne(f, sh, ms) {
+  (function () {
+    (function (sh) {
+      var grid = gridOf(sh);
+      if (!grid || !grid.length) return;
+      var a = Core.analyzeSheet(grid, { fileName: f.name, sheetName: sh.name, stores: ms.stores });
       var u = {
-        id: uid('u'), file: f.name, sheet: sh.name, grid: sh.grid, analysis: a,
+        id: uid('u'), file: f.name, sheet: sh.name, grid: grid, analysis: a,
         include: a.ok, storeName: (a.ok && a.context.store) ? a.context.store.name : '',
         year: a.ok ? a.context.year : null, month: a.ok ? a.context.month : null,
         date: a.ok ? (a.context.date || '') : '', blocks: [], rows: [], skipped: [], check: null,
@@ -3278,15 +3359,17 @@ function analyzeAll() {
         u.blocks = a.blocks.map(function (b) { var c = JSON.parse(JSON.stringify(b)); c.include = true; return c; });
         // 明らかにデータのない「原本/テンプレート」シートは既定で除外
         if (/原本|ひな|テンプレ|sample|template/i.test(sh.name)) u.include = false;
-        buildRows(u);
+        // 金額の列が無いシートは売上ソースになり得ないので、行の抽出自体を省く（速度対策）
+        var hasMoney = a.blocks.some(function (b) {
+          var r = b.roles || {};
+          return !!(r.gross || r.amount || r.subtotal) || b.layout === 'wide_date';
+        });
+        if (hasMoney) { buildRows(u); } else { u.rows = []; u.skipped = []; u.noMoney = true; }
         if (!u.rows.length) u.include = false;
       }
       IW.units.push(u);
-    });
-  });
-  pickPrimarySources();
-  detectTargets();
-  render();
+    })(sh);
+  })();
 }
 
 /** 設定・月報シートから「売上目標」「営業日数」などを拾う */
@@ -3623,6 +3706,14 @@ function viewImport(main) {
     if (i < 3) steps.appendChild(h('div', { class: 'stepline' }));
   });
   p.appendChild(steps);
+  if (IW.errors && IW.errors.length) {
+    p.appendChild(h('div', { class: 'card', style: 'margin-bottom:14px;border-color:var(--err)' },
+      h('div', { class: 'hd' }, h('span', { class: 'chip err', text: '読み取りエラー ' + IW.errors.length + '件' })),
+      h('div', { class: 'bd', style: 'font-size:12px' },
+        IW.errors.slice(0, 6).map(function (e) {
+          return h('div', {}, e.file + ' / ' + e.sheet + ' → ' + e.message);
+        }))));
+  }
   ({ 1: stepFiles, 2: stepMap, 3: stepPreview, 4: stepDone })[IW.step](p);
 }
 
@@ -3645,6 +3736,13 @@ function stepFiles(p) {
   p.appendChild(drop); p.appendChild(input);
   p.appendChild(h('div', { class: 'hint', style: 'margin-top:16px' },
     '店ごとに書式が違っても構いません。日付が横に並ぶ表・伝票明細・前半/後半で分かれた表・空列を挟んだ表なども自動判定します。判定結果は次の画面で修正できます。'));
+  if (IW.analyzing) {
+    p.appendChild(h('div', { class: 'card', style: 'margin-top:16px' },
+      h('div', { class: 'bd', style: 'text-align:center;padding:26px' },
+        h('div', { id: 'analyze-progress', style: 'font-size:15px;font-weight:600' },
+          '解析中… ' + IW.analyzing.done + ' / ' + IW.analyzing.total + ' シート'),
+        h('div', { class: 'muted', style: 'margin-top:6px;font-size:12px' }, '店舗と年月を自動で判定しています'))));
+  }
   if (IW.files.length) {
     var list = h('div', { class: 'card', style: 'margin-top:16px' }, h('div', { class: 'hd' }, h('h3', {}, '読み込み済み ' + IW.files.length + ' ファイル')));
     var bd = h('div', { class: 'bd' });
@@ -4270,7 +4368,7 @@ function viewRanking(main) {
   p.appendChild(h('div', { style: 'max-width:200px;margin-bottom:14px' }, h('label', { class: 'f' }, '指標'), msel));
   if (!rows.length) { p.appendChild(emptyState()); return; }
   var m = App.rankMetric;
-  var castRows = rows.filter(function (r) { return App.period.includeExcluded || !isExcluded(r.store, r.castKey); });
+  var castRows = rows.filter(function (r) { return App.period.includeExcluded || !isHiddenCast(r.store, r.castKey, rows); });
   var byCast = Core.aggregate(castRows, { dims: ['cast', 'store'] }).sort(function (a, b) { return b[m] - a[m]; }).slice(0, 30);
   var t = h('table');
   t.appendChild(h('thead', {}, h('tr', {}, h('th', {}, '順位'), h('th', {}, 'キャスト'), h('th', {}, '店舗'),
@@ -4328,7 +4426,9 @@ function shiftWeek(w, n) {
 }
 function latestDate() {
   var mx = '';
-  Store.sales().forEach(function (r) { if (r.date && r.date > mx) mx = r.date; });
+  Store.sales().forEach(function (r) {
+    if (r.date && (r.metrics.gross || 0) > 0 && r.date > mx) mx = r.date;
+  });
   return mx || today();
 }
 function sumOf(rows, k) { return rows.reduce(function (a, r) { return a + (r.metrics[k] || 0); }, 0); }
@@ -4361,7 +4461,7 @@ function viewMeeting(main) {
   // 目標
   var tkeys = Object.keys(Store.data.targets || {}).filter(function (k) { return k.split('|')[1] === ym && (!store || k.split('|')[0] === store); });
   var target = tkeys.reduce(function (a, k) { return a + (Store.data.targets[k].gross || 0); }, 0);
-  var days = tkeys.length ? (Store.data.targets[tkeys[0]].days || 0) : 0;
+  var days = tkeys.reduce(function (a, k) { return a + (Store.data.targets[k].days || 0); }, 0);
   var rate = target ? gross / target : 0;
 
   // 今週・先週
@@ -4419,7 +4519,7 @@ function viewMeeting(main) {
 
   var split = h('div', { class: 'split' });
   // 売上ランク別人数
-  var roster = rosterOf(mRows).filter(function (t) { return App.period.includeExcluded || !t.excluded; });
+  var roster = rosterOf(mRows).filter(function (t) { return App.period.includeExcluded || !t.hidden; });
   var rb = h('div', {});
   var maxC = Math.max.apply(null, BANDS.map(function (b) {
     return roster.filter(function (t) { var g = t.metrics.gross || 0; return g >= b.min && g < b.max; }).length;
@@ -4485,7 +4585,7 @@ var RANK_PRESETS = [
 ];
 function viewCastRank(main) {
   var rows = filteredSales();
-  var roster = rosterOf(rows).filter(function (t) { return App.period.includeExcluded || !t.excluded; });
+  var roster = rosterOf(rows).filter(function (t) { return App.period.includeExcluded || !t.hidden; });
   main.appendChild(topbar('キャスト売上ランク', '税込総売上のランク別人数と、条件に合うキャストの一覧'));
   var p = h('div', { class: 'page' }); main.appendChild(p);
   p.appendChild(periodBar(function () { render(); }));
@@ -4673,7 +4773,9 @@ function viewRoster(main) {
   var rows = filteredSales({ all: true });
   var roster = rosterOf(rows);
   var exCount = roster.filter(function (t) { return t.excluded; }).length;
-  main.appendChild(topbar('在籍・対象外', roster.length + '名（対象外 ' + exCount + '名）',
+  var naCount = roster.filter(function (t) { return t.noAttendance; }).length;
+  main.appendChild(topbar('在籍・対象外',
+    roster.length + '名（対象外 ' + exCount + '名' + (naCount ? ' / 出勤記録なし ' + naCount + '名' : '') + '）',
     h('button', {
       class: 'btn sm', onclick: function () {
         var n = 0;
@@ -4698,8 +4800,10 @@ function viewRoster(main) {
     h('th', { class: 'n' }, '出勤'), h('th', {}, '対象外'), h('th', {}, ''))));
   var tb = h('tbody');
   list.forEach(function (x) {
-    tb.appendChild(h('tr', { class: x.excluded ? 'row-off' : '' },
-      h('td', {}, h('b', { text: x.name }), x.storeLevel ? h('span', { class: 'chip', style: 'margin-left:6px', text: '店舗売上' }) : null),
+    tb.appendChild(h('tr', { class: x.hidden ? 'row-off' : '' },
+      h('td', {}, h('b', { text: x.name }),
+        x.storeLevel ? h('span', { class: 'chip', style: 'margin-left:6px', text: '店舗売上' }) : null,
+        x.noAttendance ? h('span', { class: 'chip warn', style: 'margin-left:6px', text: '出勤記録なし' }) : null),
       h('td', { class: 'muted', text: x.store }), h('td', { class: 'muted', text: x.rank || '' }),
       h('td', { class: 'muted', text: (function () { var e = tn2[exKey(x.store, x.castKey)]; return e ? e.tenure + 'ヶ月目' : '—'; })() }),
       h('td', { class: 'n', text: num(Math.round(x.metrics.gross || 0)) }),
