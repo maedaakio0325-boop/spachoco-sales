@@ -14,8 +14,8 @@ window.MEETING_TEMPLATES = {
         'ゴールは「{goal}」。終了は{end}です。',
         '助言は各議題の最後にまとめて伺います。' ] },
       { title: '前回の宿題確認', kind: 'share', minutes: 10, auto: 'prevTasks', script: [
-        '前回決まった宿題を確認します。担当の方は「完了／途中／未着手」で一言ずつお願いします。',
-        '途中・未着手のものは、新しい期限をこの場で決めます。' ] },
+        '宿題の進捗は事前に返信してもらっています。ここでは止まっているものだけを扱います。',
+        '未回答・未着手・途中のものは、止まっている理由を一言で聞き、新しい期限と担当をこの場で決めます。' ] },
       { title: '先月の数字と振り返り', kind: 'share', minutes: 15, script: [
         '先月の実績を目標との差から見ます。良かった点を1つ、課題を1つに絞ってください。' ] },
       { title: '今月の目標', kind: 'decide', minutes: 15, script: [
@@ -37,7 +37,7 @@ window.MEETING_TEMPLATES = {
     goal: '遅れている施策の次の一手と担当が決まっている',
     items: [
       { title: 'オープニング', kind: 'share', minutes: 2, script: ['本日のゴールは「{goal}」。終了は{end}です。'] },
-      { title: '前回の宿題確認', kind: 'share', minutes: 10, auto: 'prevTasks', script: ['宿題を「完了／途中／未着手」で確認します。'] },
+      { title: '前回の宿題確認', kind: 'share', minutes: 10, auto: 'prevTasks', script: ['事前報告で止まっている宿題だけを確認し、新しい期限を決めます。'] },
       { title: '数字の進み具合', kind: 'share', minutes: 10, script: ['今週の数字を目標との差で見ます。'] },
       { title: '悩み相談（1人1つ）', kind: 'discuss', minutes: 25, script: ['1人1つ、今いちばん詰まっていることを話してください。', '解決策は本人が最後に選びます。'] },
       { title: '決定と宿題の復唱', kind: 'decide', minutes: 8, auto: 'recap', script: ['決まったことと宿題を読み上げます。担当と期限を確認します。'] },
@@ -59,7 +59,7 @@ window.MEETING_TEMPLATES = {
     goal: '業務ルールの決定と担当が決まっている',
     items: [
       { title: 'オープニング', kind: 'share', minutes: 3, script: ['本日のゴールは「{goal}」。終了は{end}です。'] },
-      { title: '前回の宿題確認', kind: 'share', minutes: 10, auto: 'prevTasks', script: ['宿題を「完了／途中／未着手」で確認します。'] },
+      { title: '前回の宿題確認', kind: 'share', minutes: 10, auto: 'prevTasks', script: ['事前報告で止まっている宿題だけを確認し、新しい期限を決めます。'] },
       { title: '現場からの課題', kind: 'discuss', minutes: 20, script: ['現場で困っていることを一人ずつ。まず聞くことに集中します。'] },
       { title: '改善案と決定', kind: 'decide', minutes: 20, script: ['この場で決めます。案ごとに担当と期限を決めます。'] },
       { title: '決定と宿題の復唱', kind: 'decide', minutes: 7, auto: 'recap', script: ['決まったことと宿題を読み上げます。'] },
@@ -77,7 +77,7 @@ window.MEETING_TEMPLATES = {
       { title: '判断が必要な事項（承認・人事）', kind: 'decide', minutes: 10, script: [
         '先に、今日決める必要があるものを決めます。' ] },
       { title: '前回の対応事項の進捗', kind: 'share', minutes: 10, auto: 'prevTasks', script: [
-        '前回の対応事項を確認します。担当と期限が未設定のものはここで決めます。' ] },
+        '対応事項の進捗は事前に集めています。止まっているもの・担当と期限が未設定のものだけをここで決めます。' ] },
       { title: '各店舗の発表', kind: 'share', minutes: 0, auto: 'stores', perStore: { minutes: 10, adviceMinutes: 5 }, script: [
         '{org}の発表です。9月実績→今月目標→振り返り→取り組みの順で10分です。' ] },
       { title: '部署の共有', kind: 'share', minutes: 15, script: ['各部署から共有をお願いします。'] },
