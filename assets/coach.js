@@ -15,13 +15,23 @@
     { id: 'mind', title: 'やる気が出ない・気持ちの整理', keys: ['選択理論', 'マインド', '欲求', '上質世界'], hint: '例：最近なにをしても気持ちが乗らない' },
     { id: 'trust', title: 'お客様・仲間との信頼関係', keys: ['信頼', '見られ方', '顧客', '継続'], hint: '例：2回目につながらない' },
     { id: 'lead', title: '後輩・チームの育て方', keys: ['リーダー', '育成', '教え方', '後継者'], hint: '例：後輩に何度言っても変わらない' },
-    { id: 'org', title: '店づくり・評価・採用', keys: ['QSC', '評価', '採用', '組織', 'ブランド', '経営数字', '理念'], hint: '例：離職が止まらない／評価の基準があいまい' },
-    { id: 'meeting', title: '会議・面談の進め方', keys: ['コーチング', '面談', 'リーダー'], hint: '例：会議で若手が発言しない' },
+    { id: 'org', title: '店づくり・評価・採用', keys: ['QSC', '客数', '評価', '報酬', '採用', '離職', 'ブランド', '経営数字'], hint: '例：離職が止まらない／評価の基準があいまい' },
+    { id: 'kanbu', title: '幹部としての動き方', keys: ['幹部', '報連相', '提案', '通訳', '責任'], hint: '例：上の決定をどう現場に伝えればいいか分からない' },
+    { id: 'meeting', title: '会議・面談の進め方', keys: ['コーチング', '面談', 'ミーティング', '質問'], hint: '例：会議で若手が発言しない' },
   ];
   const AI_LINKS = [['ChatGPT', 'https://chatgpt.com/'], ['Gemini', 'https://gemini.google.com/'], ['Claude', 'https://claude.ai/new']];
 
   function kbFor(kb, scene) {
-    return kb.filter((k) => scene.keys.some((w) => (k.title || '').includes(w))).slice(0, 3);
+    // テーマ名に入っている語の数が多いものを優先（同点は登録順）
+    return kb.filter((k) => k.kind !== 'manual' && !(k.title || '').startsWith('会長の言葉')).map((k, i) => ({ k, i, n: scene.keys.filter((w) => (k.title || '').includes(w)).length }))
+      .filter((x) => x.n).sort((a, b) => b.n - a.n || a.i - b.i).slice(0, 3).map((x) => x.k);
+  }
+  // 会長の言葉（教材への書き込み）から、相談に近いものを1つ添える
+  function kaichoFor(kb, scene) {
+    const ks = kb.filter((k) => (k.title || '').startsWith('会長の言葉'));
+    if (!ks.length) return null;
+    const score = (k) => scene.keys.reduce((n, w) => n + ((k.points || []).join('').split(w).length - 1), 0);
+    return ks.map((k, i) => ({ k, i, n: score(k) })).sort((a, b) => b.n - a.n || a.i - b.i)[0].k;
   }
   function kbText(items) {
     if (!items.length) return '（スパチョコの教えはまだ登録されていません。一般的なコーチングの進め方で構いません）';
@@ -40,6 +50,7 @@
       '・質問は一度に1つだけ。私が答えてから次に進む',
       '・答えを押しつけず、私が自分で選べるように問いかける（決めるのは私）',
       '・ほめる・認めることを忘れない。責めない',
+      '・「会長の言葉」があれば、ここぞという場面で1つだけ、会長の言葉として紹介してよい',
       '・最後に「次の7日間でやる行動」を3つ以内、数字と期限つきで一緒に決める',
       '・お金、法律、心と体の不調など専門的なことは、上司や専門家に相談するよう勧める',
       '',
@@ -83,7 +94,8 @@
               h('div', { class: 'small', style: { marginTop: '8px', color: 'var(--accent)' }, text: `関連する教え ${kbFor(kb, sc).length}件` })))))));
       return;
     }
-    const items = kbFor(kb, scene);
+    const kaicho = kaichoFor(kb, scene);
+    const items = [...kbFor(kb, scene), ...(kaicho ? [kaicho] : [])];
     const f = { situation: '', goal: '', problem: '' };
     const ta = (key, ph) => { const e = h('textarea', { rows: 3, placeholder: ph }); e.addEventListener('input', () => (f[key] = e.value.trim())); return e; };
     const me = { role: OS.roleOf(S.user.role).name };
@@ -134,7 +146,9 @@
     const mine = S.user.email || S.user.memberId || '';
     const people = [...new Map(all.map((e) => [e.ownerEmail, e.name || e.ownerEmail])).entries()];
     const target = who ? decodeURIComponent(who) : mine;
-    const list = all.filter((e) => e.ownerEmail === target).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const everything = all.filter((e) => e.ownerEmail === target).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const list = everything.filter((e) => e.type !== 'quiz');
+    const quizzes = everything.filter((e) => e.type === 'quiz');
     const name = (people.find(([k]) => k === target) || [, S.user.name])[1];
     setTop('カルテ', admin ? '相談・決めた行動の記録（代表・エリアMGは全員分を見られます）' : 'あなたの相談と決めた行動の記録（見られるのは本人と代表・エリアMG）',
       [h('a', { class: 'btn primary', href: '#/coach', text: '＋ AIに相談する' })]);
@@ -157,7 +171,12 @@
       h('div', { class: 'stats' },
         h('div', { class: 'card stat' }, h('b', { text: list.length }), h('span', { text: '相談の回数' })),
         h('div', { class: 'card stat' }, h('b', { text: openActs.length }), h('span', { text: 'やりかけの行動' })),
+        h('div', { class: 'card stat' }, h('b', { text: new Set(quizzes.filter((q) => q.passed).map((q) => q.manualId)).size }), h('span', { text: 'マニュアル合格' })),
         h('div', { class: 'card stat' }, h('b', { class: openActs.some(({ a }) => a.due && a.due < today) ? 'overdue' : '', text: openActs.filter(({ a }) => a.due && a.due < today).length }), h('span', { text: '期限切れ' }))),
+      quizzes.length ? h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: 'マニュアルの確認テスト' })),
+        h('div', { class: 'bd' }, h('ul', { class: 'tasklist' }, quizzes.slice(0, 20).map((q) => h('li', {},
+          h('div', {}, h('div', { class: 'tx', text: `${q.scene.replace('マニュアル：', '')}　${q.score}/${q.total}問 ${q.passed ? '合格' : '再挑戦'}` }),
+            h('div', { class: 'who', text: fmtDate(q.createdAt.slice(0, 10)) }))))))) : null,
       list.length ? list.map((e) => h('div', { class: 'card' },
         h('div', { class: 'hd' }, h('h3', { text: e.scene }), h('span', { class: 'spacer' }), h('span', { class: 'small muted', text: fmtDate(e.createdAt.slice(0, 10)) })),
         h('div', { class: 'bd grid', style: { gap: '8px' } },
