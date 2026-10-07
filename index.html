@@ -3396,6 +3396,8 @@ function render() {
     rail.appendChild(h('button', { class: 'navitem' + (App.view === n.k ? ' on' : ''), onclick: function () { App.view = n.k; render(); } },
       h('span', { class: 'ic', text: n.ic }), h('span', {}, n.t), badge ? h('span', { class: 'badge', text: badge }) : null));
   });
+  rail.appendChild(h('a', { class: 'navitem', href: 'minutes.html', style: 'text-decoration:none' },
+    h('span', { class: 'ic', text: '≡' }), h('span', {}, '議事録')));
   rail.appendChild(h('div', { class: 'railfoot' }, 'Import Core v' + Core.version));
   var main = h('div', { class: 'main' });
   root.appendChild(h('div', { class: 'shell' }, rail, main));

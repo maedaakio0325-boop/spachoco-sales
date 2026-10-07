@@ -1,0 +1,224 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SPACHOCO 議事録</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Old+Mincho:wght@600&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/os.css">
+<style>
+/* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
+   落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
+body.app-minutes{
+  --ground:#F5F3EE; --surface:#FFFFFF; --surface-2:#EFECE4; --line:#E4DFD4; --line-strong:#CFC8B8;
+  --text:#1E2A29; --text-2:#46524F; --text-3:#7D8784;
+  --accent:#2C6E68; --accent-2:#B8913A; --accent-soft:rgba(44,110,104,.10);
+  --ok:#2F8A5B; --warn:#A8741A; --err:#C2413A;
+  --ok-bg:rgba(47,138,91,.10); --warn-bg:rgba(168,116,26,.12); --err-bg:rgba(194,65,58,.10);
+  --shadow:0 1px 2px rgba(30,42,41,.05), 0 6px 18px rgba(30,42,41,.05);
+  --radius:12px; --radius-sm:8px;
+  --sans:"Noto Sans JP","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --serif:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --rail:#1D3836; --rail-2:#264845; --rail-text:#D6E3E0; --rail-text-3:#8FA9A5;
+}
+@media (prefers-color-scheme: dark){
+  body.app-minutes:not([data-theme="light"]){
+    --ground:#0F1615; --surface:#162120; --surface-2:#1C2928; --line:#263533; --line-strong:#344644;
+    --text:#E6EEEC; --text-2:#B3C2BF; --text-3:#7E908D;
+    --accent:#6CC0B6; --accent-2:#D9B45C; --accent-soft:rgba(108,192,182,.14);
+    --ok:#5BC48C; --warn:#E3B04B; --err:#EF7D74;
+    --ok-bg:rgba(91,196,140,.12); --warn-bg:rgba(227,176,75,.12); --err-bg:rgba(239,125,116,.12);
+    --rail:#0B1211; --rail-2:#16211F;
+  }
+}
+body.app-minutes{letter-spacing:.01em}
+body.app-minutes .rail{background:var(--rail);border-right:none;color:var(--rail-text)}
+body.app-minutes .brand b{color:#fff}
+body.app-minutes .brand span,body.app-minutes .railsec{color:var(--rail-text-3)}
+body.app-minutes .brand .mark{background:linear-gradient(140deg,var(--accent-2),#E6CF8E);color:#1D3836;border-radius:50%}
+body.app-minutes .navitem{color:var(--rail-text)}
+body.app-minutes .navitem:hover{background:var(--rail-2);color:#fff}
+body.app-minutes .navitem.on{background:rgba(255,255,255,.10);color:#fff;box-shadow:inset 3px 0 0 var(--accent-2)}
+body.app-minutes .navitem .badge{color:var(--accent-2)}
+body.app-minutes .railfoot{border-top-color:rgba(255,255,255,.12);color:var(--rail-text-3)}
+body.app-minutes .railfoot select{background:var(--rail-2);color:var(--rail-text);border-color:rgba(255,255,255,.15)}
+body.app-minutes .railfoot .btn.ghost{color:var(--rail-text)}
+body.app-minutes .topbar h1{font-family:var(--serif);font-weight:600;font-size:18px}
+body.app-minutes .doc h2.t{font-family:var(--serif);font-weight:600}
+body.app-minutes .monthhd{font-family:var(--serif);font-size:14px;color:var(--text-2)}
+body.app-minutes .btn.primary{background:var(--accent);border-color:var(--accent)}
+body.app-minutes .chip.accent{color:var(--accent)}
+
+/* 会議中のステージ表示：周りを暗くして、タイマーとスクリプトに集中する */
+body.app-minutes.stage{
+  --ground:#0E1A19; --surface:#152523; --surface-2:#1C302E; --line:#25403D; --line-strong:#33524E;
+  --text:#F1F6F5; --text-2:#C3D3D0; --text-3:#86A09C;
+  --accent:#7FD1C6; --accent-soft:rgba(127,209,198,.14); --accent-2:#E2BF6A;
+  --warn:#F0C25A; --err:#FF8A80; --ok:#6FD39C;
+  --warn-bg:rgba(240,194,90,.14); --err-bg:rgba(255,138,128,.14); --ok-bg:rgba(111,211,156,.12);
+  --shadow:none;
+}
+body.app-minutes.stage .topbar{background:rgba(14,26,25,.9)}
+body.app-minutes.stage .btn.primary{color:#0E1A19}
+
+/* ===== iPad・ノートパソコン前提の調整 ===== */
+/* 指で押しやすい大きさ（目安44px）。iPadで入力時に画面が拡大しないよう入力欄は16px */
+body.app-minutes .btn{min-height:40px;padding:8px 14px}
+body.app-minutes .btn.sm{min-height:34px;padding:5px 11px}
+body.app-minutes .navitem{min-height:42px}
+body.app-minutes .orgchip{min-height:36px;padding:6px 13px}
+body.app-minutes select,body.app-minutes input[type=text],body.app-minutes input[type=date],body.app-minutes input[type=time],
+body.app-minutes input[type=search],body.app-minutes input[type=number],body.app-minutes textarea{font-size:16px;min-height:40px}
+body.app-minutes input[type=checkbox]{width:20px;height:20px}
+body.app-minutes .tasklist input{width:20px;height:20px}
+/* iPad縦（〜1024px）でも左メニューは残し、幅を詰める */
+@media (min-width:700px) and (max-width:1100px){
+  body.app-minutes .shell{grid-template-columns:184px 1fr}
+  body.app-minutes .page{padding:18px 18px 56px}
+  body.app-minutes .layout2{grid-template-columns:minmax(0,1fr) 260px}
+  body.app-minutes .filters{grid-template-columns:1fr 1fr 1fr}
+  body.app-minutes .filters .q{grid-column:1/-1}
+}
+@media (min-width:700px){
+  body.app-minutes .rail{position:sticky;transform:none;width:auto;box-shadow:none}
+  body.app-minutes .btn.menubtn{display:none}
+  body.app-minutes .shell{grid-template-columns:184px 1fr}
+}
+@media (min-width:1101px){ body.app-minutes .shell{grid-template-columns:212px 1fr} }
+/* 会議中は左メニューを隠して全画面。縦のiPadでは記録欄を下に回す */
+body.app-minutes.stage .shell{grid-template-columns:1fr!important}
+body.app-minutes.stage .rail{display:none}
+body.app-minutes.stage .page{max-width:1400px}
+body.app-minutes.stage .layout2{grid-template-columns:minmax(0,1fr) 340px}
+@media (max-width:1000px){ body.app-minutes.stage .layout2{grid-template-columns:1fr} }
+body.app-minutes.stage .runctl .btn{min-height:56px;font-size:16px;padding:10px 20px}
+body.app-minutes.stage .btn.sm{min-height:44px;font-size:14px;padding:8px 14px}
+body.app-minutes.stage .kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line-strong);border-radius:4px;padding:0 5px;color:var(--text-3)}
+@media (hover:none){ body.app-minutes.stage .kbdhint{display:none} }
+</style>
+<style>
+/* ---------- 議事録アプリ固有 ---------- */
+.filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px}
+.orgchips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.orgchip{border:1px solid var(--line-strong);background:var(--surface);border-radius:999px;padding:4px 11px;font-size:12.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;color:var(--text-2)}
+.orgchip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--text);font-weight:600}
+.monthhd{font-size:12px;color:var(--text-3);letter-spacing:.06em;margin:18px 0 8px;font-weight:600}
+.mlist{display:grid;gap:10px}
+.mcard{display:grid;grid-template-columns:4px 1fr auto;gap:14px;padding:13px 16px 13px 0;cursor:pointer;text-decoration:none;color:inherit;transition:border-color .12s}
+.mcard:hover{border-color:var(--accent)}
+.mcard .bar{border-radius:0 3px 3px 0}
+.mcard h4{margin:0 0 3px;font-size:14px;font-weight:700}
+.mcard .meta{font-size:12px;color:var(--text-3)}
+.mcard .gist{font-size:12.5px;color:var(--text-2);margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mcard .side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.stat{padding:12px 14px}
+.stat b{display:block;font-family:var(--mono);font-size:22px;font-weight:500;line-height:1.2}
+.stat span{font-size:11.5px;color:var(--text-3)}
+.layout2{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+
+/* 議事録本体 = 見本と同じテンプレート (画面とPDFで共通) */
+.doc{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:30px 34px;box-shadow:var(--shadow)}
+.doc h2.t{font-size:24px;font-weight:500;margin:0 0 4px;letter-spacing:.01em}
+.doc .when{font-size:12.5px;color:var(--text-3);margin-bottom:12px}
+.doc .att{background:var(--surface-2);border:1px solid var(--line);padding:8px 12px;font-size:12.5px;color:var(--text-2);margin-bottom:6px}
+.doc h3{font-size:15px;font-weight:500;color:var(--doc-accent,#3f7d78);margin:16px 0 6px}
+.doc h3 i{font-style:normal;color:var(--text-3);margin:0 6px}
+.doc p{margin:0 0 4px}
+.doc ul{margin:0;padding-left:18px}
+.doc ul.cols{columns:2;column-gap:28px}
+.doc ul.cols li{break-inside:avoid}
+.doc .rule{background:var(--surface-2);border:1px solid var(--line);border-left:3px solid var(--doc-accent,#3f7d78);padding:9px 14px}
+.doc .rule .lbl{font-size:12px;color:var(--text-3)}
+.doc .nums{display:flex;flex-wrap:wrap;gap:6px}
+.doc .nums span{background:var(--accent-soft);padding:2px 9px;border-radius:4px;font-size:12.5px}
+.doc .foot{font-size:11.5px;color:var(--text-3);margin-top:14px}
+.tasklist{list-style:none;padding:0!important;margin:0}
+.tasklist li{display:flex;gap:9px;align-items:flex-start;padding:5px 0;border-bottom:1px dashed var(--line)}
+.tasklist li:last-child{border-bottom:none}
+.tasklist input{margin-top:4px;accent-color:var(--accent);width:15px;height:15px;flex:none}
+.tasklist .who{font-size:11.5px;color:var(--text-3)}
+.tasklist li.done .tx{text-decoration:line-through;color:var(--text-3)}
+.overdue{color:var(--err)!important;font-weight:600}
+
+/* 編集フォーム */
+.form{display:grid;gap:14px}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form .four{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.listedit .it{display:flex;gap:6px;margin-bottom:6px}
+.listedit .it input{flex:1}
+.taskedit .it{display:grid;grid-template-columns:24px 1fr 150px 140px 32px;gap:6px;margin-bottom:6px;align-items:center}
+.steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.steps span{font-size:12px;padding:4px 10px;border-radius:999px;background:var(--surface-2);color:var(--text-3)}
+.steps span.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.drop{border:1.5px dashed var(--line-strong);border-radius:var(--radius);padding:28px;text-align:center;color:var(--text-3);cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--accent);color:var(--accent)}
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font-weight:600;font-size:11.5px;color:var(--text-2);background:var(--surface-2);padding:7px 10px;border-bottom:1px solid var(--line)}
+.tbl td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+details.tr summary{cursor:pointer;color:var(--text-2);font-size:13px}
+details.tr pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;max-height:420px;overflow:auto;background:var(--surface-2);padding:12px;border-radius:var(--radius-sm)}
+
+@media (max-width: 860px){
+  .filters{grid-template-columns:1fr 1fr}
+  .filters .q{grid-column:1/-1}
+  .layout2{grid-template-columns:1fr}
+  .doc{padding:20px 16px}
+  .doc ul.cols{columns:1}
+  .form .two,.form .four{grid-template-columns:1fr}
+  .taskedit .it{grid-template-columns:24px 1fr 32px}
+  .taskedit .it .w,.taskedit .it .d{grid-column:2}
+  .stats{grid-template-columns:1fr 1fr 1fr}
+}
+
+/* 印刷・PDF: 議事録本体だけを見本どおりのA4で出す */
+@media print{
+  @page{size:A4;margin:12mm 13mm}
+  :root{--surface:#fff;--surface-2:#f3f5f6;--line:#dfe3e5;--text:#2b2f33;--text-2:#4a5056;--text-3:#6b7278;--accent-soft:#eef4f3}
+  body{background:#fff;color:#2b2f33;font-size:10pt}
+  .rail,.topbar,.noprint,.layout2>aside{display:none!important}
+  .shell{display:block}.page{padding:0;max-width:none}
+  .layout2{display:block}
+  .doc{border:none;box-shadow:none;padding:0}
+  .doc h2.t{font-size:20pt}
+  .tasklist input{display:none}
+}
+</style>
+</head><body class="app-minutes">
+<div class="shell">
+  <nav class="rail" id="rail" aria-label="アプリ">
+    <div class="brand"><div class="mark">議</div><div><b>SPACHOCO 議事録</b><span>Meeting OS</span></div></div>
+    <a class="navitem" href="index.html"><span class="ic">¥</span>売上インポート</a>
+    <div class="railsec">議事録</div>
+    <a class="navitem" href="#/" data-nav="list"><span class="ic">≡</span>議事録一覧</a>
+    <a class="navitem" href="#/tasks" data-nav="tasks"><span class="ic">✓</span>宿題・依頼事項<span class="badge" id="taskBadge"></span></a>
+    <a class="navitem" href="#/prep" data-nav="prep"><span class="ic">▶</span>会議の準備・進行</a>
+    <a class="navitem" href="#/new" data-nav="new"><span class="ic">＋</span>新しい議事録</a>
+    <a class="navitem" href="#/settings" data-nav="settings"><span class="ic">⚙</span>名簿・権限</a>
+    <div class="railsec">準備中</div>
+    <span class="navitem soon"><span class="ic">☆</span>夢ノート</span>
+    <span class="navitem soon"><span class="ic">◎</span>統括</span>
+    <div class="railfoot">
+      <div id="whoBox"></div>
+      <div style="margin-top:8px" id="modeNote"></div>
+    </div>
+  </nav>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn ghost sm menubtn" id="menuBtn" aria-label="メニュー">☰</button>
+      <h1 id="pageTitle">議事録</h1><span class="sub" id="pageSub"></span>
+      <div class="spacer"></div>
+      <div class="row" id="topActions"></div>
+    </header>
+    <main class="page" id="view"></main>
+  </div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="assets/firebase-config.js"></script>
+<script src="assets/os-core.js"></script>
+<script src="assets/minutes-demo.js"></script>
+<script src="assets/meeting-templates.js"></script>
+<script src="assets/meeting-run.js"></script>
+<script src="assets/minutes.js"></script>
+</body></html>
