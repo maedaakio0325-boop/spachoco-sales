@@ -78,7 +78,7 @@
   // cloud: Firebase(Firestore)。ログイン必須で、権限はサーバー側のルール(firebase/firestore.rules)でも強制される。
   // demo : ブラウザ内保存。URLに ?demo を付けるか、Firebaseが読み込めないときに使う。
   const KEY = 'spachoco-os-v1';
-  const COLLS = ['orgs', 'members', 'meetings'];
+  const COLLS = ['orgs', 'members', 'meetings', 'kb', 'karte'];
   const ROOT_EMAIL = 'spicechocolategroup@gmail.com';
   const wantDemo = /[?&]demo\b/.test(location.search);
   const cloudReady = !wantDemo && global.SPACHOCO_FIREBASE && global.firebase && global.firebase.initializeApp;
@@ -126,8 +126,13 @@
     },
     // 議事録は、その人が読める範囲だけを問い合わせる(ルールが範囲外の問い合わせを拒否するため)
     async list(coll, user) {
-      if (coll !== 'meetings') return (await fdb.collection(coll).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
       const r = roleOf(user && user.role);
+      // カルテは本人の分だけ（代表・エリアMGは全員分）
+      if (coll === 'karte') {
+        const q = r.level >= roleOf('area').level ? fdb.collection('karte') : fdb.collection('karte').where('ownerEmail', '==', (user && user.email) || '');
+        return (await q.get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+      }
+      if (coll !== 'meetings') return (await fdb.collection(coll).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
       if (r.all) return (await fdb.collection('meetings').get()).docs.map((d) => ({ ...d.data(), id: d.id }));
       const orgIds = (user && user.orgIds) || [];
       const out = [];

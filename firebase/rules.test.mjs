@@ -57,5 +57,23 @@ await t('staff cannot check task on exec-only', updateDoc(doc(st, 'meetings', 'p
 await t('staff reads orgs', getDocs(collection(st, 'orgs')), true);
 await t('staff cannot read others account', getDoc(doc(st, 'accounts', 'nmgr@x.com')), false);
 await t('staff reads own account', getDoc(doc(st, 'accounts', 'staff@x.com')), true);
+// スパチョコの教え（kb）とカルテ
+await env.withSecurityRulesDisabled(async (c) => {
+  await setDoc(doc(c.firestore(), 'kb', 'k1'), { title: '目標設定' });
+  await setDoc(doc(c.firestore(), 'karte', 'staffNote'), { ownerEmail: 'staff@x.com', summary: 's' });
+});
+await t('staff reads kb', getDoc(doc(st, 'kb', 'k1')), true);
+await t('staff cannot write kb', setDoc(doc(st, 'kb', 'k2'), { title: 'x' }), false);
+await t('root writes kb', setDoc(doc(root, 'kb', 'k3'), { title: 'x' }), true);
+await t('unregistered cannot read kb', getDoc(doc(db('who@x.com'), 'kb', 'k1')), false);
+await t('staff creates own karte', setDoc(doc(st, 'karte', 'n1'), { ownerEmail: 'staff@x.com', summary: 'a' }), true);
+await t('staff cannot create karte for others', setDoc(doc(st, 'karte', 'n2'), { ownerEmail: 'nmgr@x.com', summary: 'a' }), false);
+await t('staff reads own karte', getDoc(doc(st, 'karte', 'staffNote')), true);
+await t('staff queries own karte', getDocs(query(collection(st, 'karte'), where('ownerEmail', '==', 'staff@x.com'))), true);
+await t('staff cannot list all karte', getDocs(collection(st, 'karte')), false);
+await t('manager cannot read staff karte', getDoc(doc(nm, 'karte', 'staffNote')), false);
+await t('area reads staff karte', getDoc(doc(db('area@x.com'), 'karte', 'staffNote')), true);
+await t('area cannot edit staff karte', updateDoc(doc(db('area@x.com'), 'karte', 'staffNote'), { summary: 'x' }), false);
+await t('staff cannot hand karte to others', updateDoc(doc(st, 'karte', 'staffNote'), { ownerEmail: 'nmgr@x.com' }), false);
 console.log(R.join('\n')); console.log(R.filter((x) => x.startsWith('FAIL')).length + ' failures');
 await env.cleanup();

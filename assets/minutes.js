@@ -472,7 +472,19 @@
       fi.addEventListener('change', async () => {
         const f = fi.files[0]; if (!f) return;
         let arr;
-        try { arr = JSON.parse(await f.text()); if (!Array.isArray(arr)) arr = arr.meetings || [arr]; } catch (e) { toast('JSONを読み込めませんでした'); return; }
+        let kb = null;
+        try {
+          const j = JSON.parse(await f.text());
+          if (j && Array.isArray(j.kb)) kb = j.kb;
+          else arr = Array.isArray(j) ? j : j.meetings || [j];
+        } catch (e) { toast('JSONを読み込めませんでした'); return; }
+        // スパチョコの教え（AI相談用の知識）の取り込み
+        if (kb) {
+          if (!confirm(`スパチョコの教え ${kb.length}件を取り込みますか？（同じIDのものは上書き）`)) return;
+          let n = 0;
+          for (const k of kb) { try { await Store.put('kb', { ...k, id: k.id || uid('kb') }); n++; } catch (e) {} }
+          toast(`教えを${n}件取り込みました`); return;
+        }
         const known = new Set(S.orgs.map((o) => o.id));
         const bad = arr.filter((m) => !known.has(m.orgId));
         if (bad.length) { toast(`店舗・部署が未登録の議事録が${bad.length}件あります（先に登録してください）`); return; }
@@ -482,7 +494,7 @@
         await reload(); refreshChrome(); toast(`${n}件取り込みました`); location.hash = '#/';
       });
       return h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: '議事録の取り込み' })),
-        h('div', { class: 'bd row' }, h('span', { class: 'small muted', text: 'Claudeが作成した議事録データ（.json）をまとめて登録します。' }), fi,
+        h('div', { class: 'bd row' }, h('span', { class: 'small muted', text: 'Claudeが作成した議事録データ、またはスパチョコの教え（.json）をまとめて登録します。' }), fi,
           h('button', { class: 'btn sm', onclick: () => fi.click() }, 'JSONファイルを選ぶ')));
     })() : null;
 
@@ -512,6 +524,8 @@
     else if (p[0] === 'm' && p[1]) viewDetail(p[1]);
     else if (p[0] === 'new') viewNew();
     else if (p[0] === 'prep') window.MeetingRun.viewPrep(CTX, p[1]);
+    else if (p[0] === 'coach') window.Coach.viewCoach(CTX, p[1]);
+    else if (p[0] === 'karte') window.Coach.viewKarte(CTX, p[1]);
     else if (p[0] === 'run' && p[1]) window.MeetingRun.viewRun(CTX, p[1]);
     else if (p[0] === 'tasks') viewTasks();
     else if (p[0] === 'settings') viewSettings();

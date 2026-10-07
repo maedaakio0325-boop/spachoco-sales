@@ -46,6 +46,19 @@ service cloud.firestore {
       allow write: if member() && level() >= 100;
     }
 
+    // スパチョコの教え（AI相談用の知識）: 登録メンバーは閲覧、変更は代表のみ
+    match /kb/{id} {
+      allow read: if member();
+      allow write: if member() && level() >= 100;
+    }
+    // カルテ（相談の記録）: 本人と代表・エリアMGだけが読める。書けるのは本人
+    match /karte/{id} {
+      allow read: if member() && (resource.data.ownerEmail == email() || level() >= 80);
+      allow create: if member() && request.resource.data.ownerEmail == email();
+      allow update: if member() && resource.data.ownerEmail == email() && request.resource.data.ownerEmail == email();
+      allow delete: if member() && (resource.data.ownerEmail == email() || level() >= 100);
+    }
+
     // 議事録
     match /meetings/{id} {
       allow read: if member() && canReadMeeting(resource.data);
