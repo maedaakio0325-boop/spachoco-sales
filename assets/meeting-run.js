@@ -111,7 +111,7 @@
     if (!editable.length) { setTop('会議の準備', ''); $view.replaceChildren(h('div', { class: 'card empty', text: '会議を準備できるのは店長・部署長以上です。' })); return; }
     const existing = id ? S.meetings.find((x) => x.id === id) : null;
     const m = existing ? JSON.parse(JSON.stringify(existing)) : {
-      id: '', orgId: editable[0].id, type: '経営者会議', date: new Date().toISOString().slice(0, 10), start: '15:00', end: '', place: '',
+      id: '', orgId: (editable.find((o) => S.storemode && o.id === S.scope) || editable[0]).id, type: '経営者会議', date: new Date().toISOString().slice(0, 10), start: '15:00', end: '', place: '',
       participants: [], visibility: 'exec', status: 'draft', stage: 'planned', purpose: [], goal: '', agenda: [],
       numbers: [], issues: [], decisions: [], next: { meeting: '', content: '' }, tasks: [], pending: '', source: { kind: 'manual' },
     };

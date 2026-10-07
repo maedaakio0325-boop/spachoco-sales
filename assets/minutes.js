@@ -8,12 +8,23 @@
   const TYPES = ['経営者会議', '幹部会議', '朝礼', '部署会議', '全体会議', '1on1', 'その他'];
   const S = { user: null, orgs: [], members: [], meetings: [], filter: { org: '', q: '', month: '', type: '', status: '' } };
   try { Object.assign(S.filter, JSON.parse(sessionStorage.getItem('mtg-filter') || '{}')); } catch (e) {}
+  // 表示のしかた：店舗ごと（左端の店舗アイコンで切り替え）か、まとめて（全店舗を一覧）か。端末ごとに覚える
+  const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem('os-' + k); localStorage.setItem('os-' + k, v); } catch (e) {} return null; };
+  S.scope = pref('scope') || '';
+  S.storemode = pref('storemode');
 
   const $view = document.getElementById('view');
   const orgOf = (id) => S.orgs.find((o) => o.id === id) || { id, name: id || '未設定', color: '#8A8A9E' };
   const today = () => new Date().toISOString().slice(0, 10);
   const visible = () => S.meetings.filter((m) => Perm.canView(S.user, m));
   const isOverdue = (t) => !t.done && t.due && t.due < today();
+  const level = () => roleOf(S.user && S.user.role).level;
+  const isCast = () => level() < 60; // 幹部・スタッフは「自分のこと」中心のメニュー
+  const myOrgs = () => (roleOf(S.user.role).all ? S.orgs : S.orgs.filter((o) => (S.user.orgIds || []).includes(o.id)));
+  const inScope = (m) => !S.storemode || !S.scope || m.orgId === S.scope;
+  const scoped = () => visible().filter(inScope);
+  function setScope(id) { S.scope = id; pref('scope', id); S.filter.org = ''; refreshChrome(); route(); }
+  function setStoreMode(on) { S.storemode = on; pref('storemode', on ? '1' : '0'); refreshChrome(); route(); }
 
   async function reload() {
     S.user = await Session.current();
@@ -36,15 +47,74 @@
     document.getElementById('pageSub').textContent = sub || '';
     const box = document.getElementById('topActions');
     box.replaceChildren(...(actions || []));
-    document.title = title + ' | SPACHOCO 議事録';
+    document.title = title + ' | SPACHOCO OS';
   }
   function markNav(key) {
     document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('on', a.dataset.nav === key));
     document.getElementById('rail').classList.remove('open');
   }
+  // 店舗アイコンの2文字。頭の2文字が他とかぶるときは「最初＋最後の文字」（僕らの森／僕らの森2 → 僕森／僕2）
+  function labelOf(o, orgs) {
+    if (o.short) return o.short;
+    const two = (x) => x.name.slice(0, 2);
+    return orgs.some((x) => x !== o && two(x) === two(o)) ? o.name[0] + o.name.slice(-1) : two(o);
+  }
+  // ---------- 左メニュー（店舗アイコン列＋メニュー）----------
+  function renderRail() {
+    if (S.storemode === null || S.storemode === undefined) S.storemode = level() < 80; // 初回：代表・エリアMGは「まとめて」、それ以外は「店舗ごと」
+    else if (typeof S.storemode === 'string') S.storemode = S.storemode === '1';
+    const orgs = myOrgs();
+    if (S.scope && !orgs.some((o) => o.id === S.scope)) S.scope = '';
+    if (S.storemode && !S.scope && orgs.length && !roleOf(S.user.role).all) S.scope = orgs[0].id;
+    document.body.classList.toggle('storemode', !!S.storemode);
+    const mineOnly = (t) => !isCast() || t.assigneeId === S.user.memberId;
+    const openIn = (orgId) => visible().filter((m) => !orgId || m.orgId === orgId).reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done && mineOnly(t)).length, 0);
+
+    const srv = (id, label, color, title) => {
+      const n = openIn(id);
+      return h('button', { class: 'srv' + (S.scope === id ? ' on' : ''), title, 'aria-label': title, style: { background: color }, onclick: () => setScope(id) },
+        label, n ? h('span', { class: 'n', text: n > 99 ? '99+' : n }) : null);
+    };
+    document.getElementById('servers').replaceChildren(...[
+      roleOf(S.user.role).all || orgs.length > 1 ? [srv('', '全', '#2C6E68', 'すべての店舗・部署'), h('div', { class: 'srvsep' })] : [],
+      orgs.map((o) => srv(o.id, labelOf(o, orgs), o.color || '#5B6B6A', o.name)),
+    ].flat());
+    const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
+    document.getElementById('brandSub').textContent = scopeOrg ? scopeOrg.name : (S.storemode ? 'すべての店舗・部署' : '全店舗まとめて');
+
+    const item = (key, href, ic, label, badge) => h('a', { class: 'navitem', href, 'data-nav': key }, h('span', { class: 'ic', text: ic }), label,
+      badge ? h('span', { class: 'badge', text: badge }) : null);
+    const soon = (ic, label) => h('span', { class: 'navitem soon' }, h('span', { class: 'ic', text: ic }), label);
+    const sec = (t) => h('div', { class: 'railsec', text: t });
+    const canNew = S.orgs.some((o) => (!scopeOrg || o.id === scopeOrg.id) && Perm.canCreateIn(S.user, o.id));
+    const openAll = scoped().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done).length, 0);
+    const openMine = scoped().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done && t.assigneeId === S.user.memberId).length, 0);
+    const meet = [sec(scopeOrg ? `${scopeOrg.name}の会議` : '会議'),
+      item('list', '#/', '≡', '議事録'),
+      isCast() ? null : item('tasks', '#/tasks', '✓', '宿題・依頼事項', openAll || ''),
+      canNew ? item('prep', '#/prep', '▶', '会議の準備・進行') : null,
+      canNew ? item('new', '#/new', '＋', '新しい議事録') : null];
+    const grow = [sec(isCast() ? 'わたし' : '成長'),
+      isCast() ? item('mytasks', '#/tasks/mine', '✓', '自分の宿題', openMine || '') : null,
+      item('coach', '#/coach', '✦', 'AIに相談（壁打ち）'),
+      item('learn', '#/learn', '✎', 'マニュアルで学ぶ'),
+      item('karte', '#/karte', '♡', 'カルテ')];
+    const apps = [sec('スパチョコのアプリ'),
+      level() >= 60 ? h('a', { class: 'navitem', href: 'index.html' }, h('span', { class: 'ic', text: '¥' }), '売上') : null,
+      soon('￥', '給料（準備中）'), soon('☆', '夢ノート（準備中）'), level() >= 60 ? soon('◎', '統括（準備中）') : null];
+    const admin = level() >= 60 ? [sec('管理'), item('settings', '#/settings', '⚙', '名簿・権限')] : [];
+    document.getElementById('navBox').replaceChildren(...(isCast() ? [grow, meet, apps] : [meet, grow, apps, admin]).flat().filter(Boolean));
+
+    document.getElementById('viewToggle').replaceChildren(
+      h('div', { class: 'small', style: { marginBottom: '6px' }, text: '表示のしかた' }),
+      h('div', { class: 'vtoggle', role: 'group', 'aria-label': '表示のしかた' },
+        h('button', { class: S.storemode ? 'on' : '', onclick: () => setStoreMode(true) }, '店舗ごと'),
+        h('button', { class: S.storemode ? '' : 'on', onclick: () => setStoreMode(false) }, 'まとめて')));
+    const key = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'list';
+    markNav(key === 'm' ? 'list' : key === 'tasks' && location.hash.includes('/mine') ? 'mytasks' : key === 'run' ? 'prep' : key);
+  }
   function refreshChrome() {
-    const open = visible().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done).length, 0);
-    document.getElementById('taskBadge').textContent = open || '';
+    renderRail();
     const who = document.getElementById('whoBox');
     if (Session.cloud) {
       who.replaceChildren(
@@ -70,9 +140,10 @@
   function viewList() {
     markNav('list');
     const canNew = S.orgs.some((o) => Perm.canCreateIn(S.user, o.id));
-    setTop('議事録一覧', `${S.user.name} として表示`, canNew ? [h('a', { class: 'btn primary', href: '#/new', text: '＋ 新しい議事録' })] : []);
-    const all = visible();
+    setTop(S.storemode && S.scope ? `${orgOf(S.scope).name}の議事録` : '議事録一覧', `${S.user.name} として表示`, canNew ? [h('a', { class: 'btn primary', href: '#/new', text: '＋ 新しい議事録' })] : []);
+    const all = scoped();
     const f = S.filter;
+    const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
     const months = [...new Set(all.map((m) => m.date.slice(0, 7)))].sort().reverse();
     const rows = all.filter((m) => {
       if (f.org && m.orgId !== f.org) return false;
@@ -119,7 +190,7 @@
       h('div', { class: 'mlist' }, ms.map(card)),
     ]) : h('div', { class: 'card empty', text: all.length ? '条件に合う議事録はありません' : '閲覧できる議事録はまだありません' });
 
-    $view.replaceChildren(...[stats, chips, filters, list].flat(Infinity));
+    $view.replaceChildren(...[stats, scopeOrg ? null : chips, filters, list].flat(Infinity).filter(Boolean));
   }
 
   function card(m) {
@@ -318,8 +389,8 @@
       setTop('新しい議事録', ''); $view.replaceChildren(h('div', { class: 'card empty', text: '議事録を作成できるのは店長・部署長以上です。' })); return;
     }
     setTop('新しい議事録', '録音から議事録を作る');
-    const st = { orgId: editableOrgs[0].id, type: '経営者会議', date: today(), file: null, transcript: '' };
-    const orgSel = h('select', {}, editableOrgs.map((o) => h('option', { value: o.id, text: o.name })));
+    const st = { orgId: (editableOrgs.find((o) => S.storemode && o.id === S.scope) || editableOrgs[0]).id, type: '経営者会議', date: today(), file: null, transcript: '' };
+    const orgSel = h('select', {}, editableOrgs.map((o) => h('option', { value: o.id, selected: o.id === st.orgId, text: o.name })));
     orgSel.addEventListener('change', () => (st.orgId = orgSel.value));
     const typeSel = h('select', {}, TYPES.map((t) => h('option', { value: t, text: t })));
     typeSel.addEventListener('change', () => (st.type = typeSel.value));
@@ -367,17 +438,20 @@
   }
 
   // ======================= 宿題・依頼事項 =======================
-  function viewTasks() {
-    markNav('tasks');
-    setTop('宿題・依頼事項', '会議で決まった「誰が・何を・いつまで」');
+  function viewTasks(mineOnly) {
+    markNav(mineOnly ? 'mytasks' : 'tasks');
+    const where = S.storemode && S.scope ? `${orgOf(S.scope).name}｜` : '';
+    setTop(mineOnly ? '自分の宿題' : '宿題・依頼事項', where + '会議で決まった「誰が・何を・いつまで」');
     const st = viewTasks.st || (viewTasks.st = { show: 'open', mine: false });
-    const items = visible().flatMap((m) => (m.tasks || []).map((t) => ({ m, t })))
+    if (mineOnly) st.mine = true;
+    const items = scoped().flatMap((m) => (m.tasks || []).map((t) => ({ m, t })))
       .filter(({ t }) => (st.show === 'open' ? !t.done : st.show === 'done' ? t.done : true))
       .filter(({ t }) => !st.mine || t.assigneeId === S.user.memberId)
       .sort((a, b) => (a.t.due || '9999').localeCompare(b.t.due || '9999'));
-    const tab = (k, label) => h('button', { class: 'orgchip' + (st.show === k ? ' on' : ''), onclick: () => { st.show = k; viewTasks(); } }, label);
+    const tab = (k, label) => h('button', { class: 'orgchip' + (st.show === k ? ' on' : ''), onclick: () => { st.show = k; viewTasks(mineOnly); } }, label);
     const mine = h('label', { class: 'row small', style: { gap: '6px', cursor: 'pointer' } },
       h('input', { type: 'checkbox', checked: st.mine, onchange: (e) => { st.mine = e.target.checked; viewTasks(); } }), '自分の担当だけ');
+    if (mineOnly) mine.style.display = 'none';
     const table = items.length ? h('div', { class: 'card', style: { overflow: 'auto' } }, h('table', { class: 'tbl' },
       h('thead', {}, h('tr', {}, ['', '宿題', '担当', '期限', '会議'].map((x) => h('th', { text: x })))),
       h('tbody', {}, items.map(({ m, t }) => {
@@ -385,7 +459,7 @@
         const cb = h('input', { type: 'checkbox', checked: t.done, disabled: !can, 'aria-label': '完了' });
         cb.addEventListener('change', async () => {
           try { await setTaskDone(m, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); }
-          viewTasks();
+          viewTasks(mineOnly);
         });
         return h('tr', {}, h('td', {}, cb), h('td', { style: t.done ? { textDecoration: 'line-through', color: 'var(--text-3)' } : {}, text: t.text }),
           h('td', { text: t.assignee || '未定' }),
@@ -528,7 +602,7 @@
     else if (p[0] === 'karte') window.Coach.viewKarte(CTX, p[1]);
     else if (p[0] === 'learn') window.Learn.view(CTX, p[1]);
     else if (p[0] === 'run' && p[1]) window.MeetingRun.viewRun(CTX, p[1]);
-    else if (p[0] === 'tasks') viewTasks();
+    else if (p[0] === 'tasks') viewTasks(p[1] === 'mine');
     else if (p[0] === 'settings') viewSettings();
     else viewList();
     window.scrollTo(0, 0);
