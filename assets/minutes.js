@@ -16,9 +16,19 @@
   const isOverdue = (t) => !t.done && t.due && t.due < today();
 
   async function reload() {
-    [S.orgs, S.members, S.meetings] = await Promise.all([Store.list('orgs'), Store.list('members'), Store.list('meetings')]);
     S.user = await Session.current();
-    S.meetings.sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+    if (!S.user || S.user.unregistered) { S.orgs = []; S.members = []; S.meetings = []; return; }
+    [S.orgs, S.members, S.meetings] = await Promise.all([Store.list('orgs'), Store.list('members'), Store.list('meetings', S.user)]);
+    S.meetings.sort((a, b) => (b.date + (b.start || '')).localeCompare(a.date + (a.start || '')));
+  }
+  // 宿題の完了チェック(宿題の欄だけ更新するので、編集権限のない担当者本人も保存できる)
+  async function setTaskDone(m, taskId, done) {
+    const fresh = await Store.get('meetings', m.id);
+    if (!fresh) return;
+    const tasks = (fresh.tasks || []).map((x) => x.id !== taskId ? x
+      : { ...x, done, doneAt: done ? new Date().toISOString() : null, doneBy: done ? (S.user.memberId || S.user.email || '') : null });
+    await Store.patch('meetings', m.id, { tasks });
+    await reload(); refreshChrome();
   }
 
   function setTop(title, sub, actions) {
@@ -35,12 +45,25 @@
   function refreshChrome() {
     const open = visible().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done).length, 0);
     document.getElementById('taskBadge').textContent = open || '';
-    const sel = document.getElementById('asUser');
-    sel.replaceChildren(...S.members.map((m) => h('option', { value: m.id, selected: m.id === S.user.memberId },
+    const who = document.getElementById('whoBox');
+    if (Session.cloud) {
+      who.replaceChildren(
+        h('div', { style: { fontWeight: 600, color: 'var(--text-2)' }, text: S.user.name }),
+        h('div', { text: `${roleOf(S.user.role).name}｜${S.user.email}` }),
+        h('button', { class: 'btn ghost sm', style: { marginTop: '6px', paddingLeft: 0 }, onclick: async () => { await Session.signOut(); location.reload(); } }, 'ログアウト'));
+      document.getElementById('modeNote').replaceChildren();
+      return;
+    }
+    const sel = h('select', { id: 'asUser' }, S.members.map((m) => h('option', { value: m.id, selected: m.id === S.user.memberId },
       `${m.name}（${roleOf(m.role).name}）`)));
+    sel.addEventListener('change', async () => {
+      Session.switchTo(sel.value); await reload(); refreshChrome(); route();
+      toast(`${S.user.name}（${roleOf(S.user.role).name}）として表示`);
+    });
+    who.replaceChildren(h('label', { class: 'f', for: 'asUser', text: '表示中のユーザー（権限の確認用）' }), sel);
     document.getElementById('modeNote').replaceChildren(
       h('span', { class: 'chip warn', text: 'サンプル表示中' }),
-      h('div', { class: 'small', style: { marginTop: '6px' }, text: 'データはこの端末のブラウザ内だけに保存されます。ログイン機能は第2段階で追加します。' }));
+      h('div', { class: 'small', style: { marginTop: '6px' }, text: 'データはこの端末のブラウザ内だけに保存されます。' }));
   }
 
   // ======================= 一覧 =======================
@@ -178,11 +201,8 @@
       const can = Perm.canCheckTask(S.user, m, t);
       const cb = h('input', { type: 'checkbox', checked: t.done, disabled: !can, 'aria-label': '完了' });
       cb.addEventListener('change', async () => {
-        const fresh = await Store.get('meetings', m.id);
-        const ft = (fresh.tasks || []).find((x) => x.id === t.id);
-        if (!ft) return;
-        ft.done = cb.checked; ft.doneAt = cb.checked ? new Date().toISOString() : null; ft.doneBy = cb.checked ? S.user.memberId : null;
-        await Store.put('meetings', fresh); await reload(); refreshChrome(); route();
+        try { await setTaskDone(m, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); }
+        route();
         toast(cb.checked ? '完了にしました' : '未完了に戻しました');
       });
       return h('li', { class: t.done ? 'done' : '' }, cb, h('div', {},
@@ -255,8 +275,9 @@
       if (!m.orgId || !m.date) { toast('店舗・部署と日付を入れてください'); return; }
       if (!Perm.canEdit(S.user, m)) { toast('この店舗・部署で保存する権限がありません'); return; }
       m.id = m.id || uid('mtg');
-      m.createdBy = m.createdBy || S.user.memberId;
-      await Store.put('meetings', m); await reload(); refreshChrome();
+      m.createdBy = m.createdBy || S.user.memberId || S.user.email || '';
+      try { await Store.put('meetings', m); } catch (e) { toast('保存できませんでした（権限がない可能性があります）'); return; }
+      await reload(); refreshChrome();
       toast(m.status === 'published' ? '公開しました' : '下書きを保存しました');
       location.hash = '#/m/' + m.id;
     }
@@ -362,9 +383,8 @@
         const can = Perm.canCheckTask(S.user, m, t);
         const cb = h('input', { type: 'checkbox', checked: t.done, disabled: !can, 'aria-label': '完了' });
         cb.addEventListener('change', async () => {
-          const fresh = await Store.get('meetings', m.id);
-          const ft = fresh.tasks.find((x) => x.id === t.id); ft.done = cb.checked; ft.doneAt = cb.checked ? new Date().toISOString() : null;
-          await Store.put('meetings', fresh); await reload(); refreshChrome(); viewTasks();
+          try { await setTaskDone(m, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); }
+          viewTasks();
         });
         return h('tr', {}, h('td', {}, cb), h('td', { style: t.done ? { textDecoration: 'line-through', color: 'var(--text-3)' } : {}, text: t.text }),
           h('td', { text: t.assignee || '未定' }),
@@ -400,6 +420,7 @@
       const name = h('input', { type: 'text', value: mb.name, disabled: !admin, 'aria-label': '名前' });
       const alias = h('input', { type: 'text', value: (mb.aliases || []).join('・'), disabled: !admin, placeholder: '例：ひらがな表記・よくある誤変換', 'aria-label': '誤変換されやすい表記' });
       const role = h('select', { disabled: !admin, 'aria-label': '役職' }, ROLES.map((r) => h('option', { value: r.id, selected: mb.role === r.id, text: r.name })));
+      const mail = h('input', { type: 'text', value: mb.email || '', disabled: !admin, placeholder: 'ログインするGoogleアドレス', 'aria-label': 'Googleアドレス', inputmode: 'email' });
       const orgs = h('div', { class: 'row', style: { gap: '4px' } }, S.orgs.map((o) => {
         const c = h('input', { type: 'checkbox', checked: (mb.orgIds || []).includes(o.id), disabled: !admin });
         c.addEventListener('change', sv);
@@ -407,31 +428,76 @@
         return h('label', { class: 'chip', style: { cursor: admin ? 'pointer' : 'default', gap: '4px' } }, c, o.name);
       }));
       async function sv() {
-        await Store.put('members', { ...mb, name: name.value.trim() || mb.name, role: role.value,
+        const next = { ...mb, name: name.value.trim() || mb.name, role: role.value,
+          email: mail.value.trim().toLowerCase(),
           aliases: alias.value.split(/[・、,，]/).map((s) => s.trim()).filter(Boolean),
-          orgIds: [...orgs.querySelectorAll('input:checked')].map((c) => c.dataset.org) });
+          orgIds: [...orgs.querySelectorAll('input:checked')].map((c) => c.dataset.org) };
+        try {
+          await Store.put('members', next);
+          await syncAccount(mb, next);
+          Object.assign(mb, next);
+        } catch (e) { toast('保存できませんでした'); }
         await reload(); refreshChrome();
       }
-      [name, alias, role].forEach((e) => e.addEventListener('change', sv));
+      [name, alias, role, mail].forEach((e) => e.addEventListener('change', sv));
       const del = admin && mb.id !== S.user.memberId ? h('button', { class: 'btn ghost sm danger', 'aria-label': '削除', onclick: async () => {
         if (!confirm(`${mb.name} を名簿から削除しますか？`)) return;
-        await Store.del('members', mb.id); await reload(); refreshChrome(); viewSettings();
+        await Store.del('members', mb.id); await syncAccount(mb, null); await reload(); refreshChrome(); viewSettings();
       } }, '✕') : null;
-      return h('tr', {}, h('td', { style: { minWidth: '130px' } }, name), h('td', { style: { minWidth: '150px' } }, role), h('td', {}, orgs), h('td', { style: { minWidth: '160px' } }, alias), h('td', {}, del));
+      return h('tr', {}, h('td', { style: { minWidth: '130px' } }, name), h('td', { style: { minWidth: '150px' } }, role), h('td', {}, orgs),
+        Session.cloud ? h('td', { style: { minWidth: '200px' } }, mail) : null, h('td', { style: { minWidth: '160px' } }, alias), h('td', {}, del));
     });
     const addMem = admin ? h('button', { class: 'btn sm', onclick: async () => { await Store.put('members', { id: uid('m'), name: '新しいメンバー', aliases: [], role: 'staff', orgIds: [] }); await reload(); refreshChrome(); viewSettings(); } }, '＋ メンバーを追加') : null;
 
-    const resetBtn = admin ? h('button', { class: 'btn ghost sm danger', onclick: async () => {
+    // ログイン用の対応表(accounts/{メール})を名簿と同期する。ルールはこれを見て権限を判定する
+    async function syncAccount(before, after) {
+      if (!Session.cloud) return;
+      const oldMail = (before && before.email) || '';
+      const newMail = (after && after.email) || '';
+      if (oldMail && oldMail !== newMail) await Store.del('accounts', oldMail);
+      if (newMail) await Store.put('accounts', { id: newMail, memberId: after.id, name: after.name, role: after.role, orgIds: after.orgIds || [] });
+    }
+
+    // 店舗・部署が空のときの初期登録
+    const seedOrgs = admin && !S.orgs.length ? h('div', { class: 'banner accent row' }, '店舗・部署がまだ登録されていません。',
+      h('button', { class: 'btn sm primary', onclick: async () => {
+        for (const o of window.MINUTES_DEMO.orgs) await Store.put('orgs', o);
+        await reload(); refreshChrome(); viewSettings(); toast('5店舗と3部署を登録しました');
+      } }, '5店舗＋運営本部・内勤チーム・経理部を登録')) : null;
+
+    // 議事録の一括取り込み(JSON)
+    const importBox = admin ? (() => {
+      const fi = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+      fi.addEventListener('change', async () => {
+        const f = fi.files[0]; if (!f) return;
+        let arr;
+        try { arr = JSON.parse(await f.text()); if (!Array.isArray(arr)) arr = arr.meetings || [arr]; } catch (e) { toast('JSONを読み込めませんでした'); return; }
+        const known = new Set(S.orgs.map((o) => o.id));
+        const bad = arr.filter((m) => !known.has(m.orgId));
+        if (bad.length) { toast(`店舗・部署が未登録の議事録が${bad.length}件あります（先に登録してください）`); return; }
+        if (!confirm(`${arr.length}件の議事録を取り込みますか？（同じIDのものは上書き）`)) return;
+        let n = 0;
+        for (const m of arr) { try { await Store.put('meetings', { ...m, id: m.id || uid('mtg') }); n++; } catch (e) {} }
+        await reload(); refreshChrome(); toast(`${n}件取り込みました`); location.hash = '#/';
+      });
+      return h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: '議事録の取り込み' })),
+        h('div', { class: 'bd row' }, h('span', { class: 'small muted', text: 'Claudeが作成した議事録データ（.json）をまとめて登録します。' }), fi,
+          h('button', { class: 'btn sm', onclick: () => fi.click() }, 'JSONファイルを選ぶ')));
+    })() : null;
+
+    const resetBtn = admin && !Session.cloud ? h('button', { class: 'btn ghost sm danger', onclick: async () => {
       if (!confirm('この端末に保存したデータを消して、サンプルの状態に戻しますか？')) return;
       await Store.reset(window.MINUTES_DEMO); await reload(); refreshChrome(); viewSettings(); toast('サンプルの状態に戻しました');
     } }, 'サンプルの状態に戻す') : null;
 
     $view.replaceChildren(h('div', { class: 'grid' },
+      seedOrgs,
       section('役職ごとの権限', roleTable),
       h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: '店舗・部署' }), h('span', { class: 'spacer' }), addOrg),
         h('div', { class: 'bd', style: { overflow: 'auto' } }, h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, ['色', '名前', '区分'].map((x) => h('th', { text: x })))), h('tbody', {}, orgRows)))),
       h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: 'メンバー' }), h('span', { class: 'small muted', text: '「誤変換されやすい表記」は、AIが議事録を作るときに正しい名前へ直すのに使います' }), h('span', { class: 'spacer' }), addMem),
-        h('div', { class: 'bd', style: { overflow: 'auto' } }, h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, ['名前', '役職', '所属', '誤変換されやすい表記', ''].map((x) => h('th', { text: x })))), h('tbody', {}, memRows)))),
+        h('div', { class: 'bd', style: { overflow: 'auto' } }, h('table', { class: 'tbl' }, h('thead', {}, h('tr', {}, ['名前', '役職', '所属', Session.cloud ? 'Googleアドレス（ログイン用）' : null, '誤変換されやすい表記', ''].filter((x) => x !== null).map((x) => h('th', { text: x })))), h('tbody', {}, memRows)))),
+      importBox,
       resetBtn ? h('div', {}, resetBtn) : null));
   }
 
@@ -447,14 +513,39 @@
     window.scrollTo(0, 0);
   }
 
+  // ログイン画面・未登録画面
+  function gate() {
+    document.querySelector('.rail').style.display = 'none';
+    document.querySelector('.shell').style.gridTemplateColumns = '1fr';
+    setTop('SPACHOCO 議事録', '');
+    const box = h('div', { class: 'card', style: { maxWidth: '440px', margin: '40px auto' } }, h('div', { class: 'bd grid', style: { gap: '12px', textAlign: 'center', padding: '28px' } }));
+    const bd = box.firstChild;
+    if (!S.user) {
+      bd.append(h('div', { class: 'brand', style: { justifyContent: 'center' } }, h('div', { class: 'mark', text: 'SC' }), h('div', { style: { textAlign: 'left' } }, h('b', { text: 'SPACHOCO OS' }), h('span', { text: '議事録' }))),
+        h('p', { class: 'muted small', text: 'スパチョコのGoogleアカウントでログインしてください。' }),
+        h('button', { class: 'btn primary', style: { justifyContent: 'center' }, onclick: async () => {
+          try { await Session.signIn(); location.reload(); } catch (e) { toast('ログインできませんでした'); }
+        } }, 'Googleでログイン'));
+    } else {
+      bd.append(h('h3', { style: { margin: 0 }, text: 'まだ名簿に登録されていません' }),
+        h('p', { class: 'small muted', text: `${S.user.email} でログインしています。代表に、名簿・権限の画面でこのアドレスを登録してもらってください。` }),
+        h('button', { class: 'btn', style: { justifyContent: 'center' }, onclick: async () => { await Session.signOut(); location.reload(); } }, '別のアカウントでログイン'));
+    }
+    $view.replaceChildren(box);
+  }
+
   (async function start() {
-    await Store.init(window.MINUTES_DEMO);
-    await reload();
+    try {
+      await Store.init(window.MINUTES_DEMO);
+      await Session.waitAuth();
+      await reload();
+    } catch (e) {
+      console.error(e);
+      $view.replaceChildren(h('div', { class: 'card empty', text: '読み込みに失敗しました。通信状況を確認して、再読み込みしてください。' }));
+      return;
+    }
+    if (!S.user || S.user.unregistered) { gate(); return; }
     refreshChrome();
-    document.getElementById('asUser').addEventListener('change', async (e) => {
-      Session.switchTo(e.target.value); await reload(); refreshChrome(); route();
-      toast(`${S.user.name}（${roleOf(S.user.role).name}）として表示`);
-    });
     document.getElementById('menuBtn').addEventListener('click', () => document.getElementById('rail').classList.toggle('open'));
     window.addEventListener('hashchange', route);
     route();

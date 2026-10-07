@@ -1,0 +1,66 @@
+rules_version = '2';
+// SPACHOCO OS  セキュリティルール（権限をサーバー側で強制する）
+// 役職: owner(代表) / area(エリアMG・統括) / manager(店長・部署長) / exec(幹部) / staff(内勤・スタッフ)
+// ログインした人の役職と所属は accounts/{Googleメールアドレス} に入る（代表が名簿画面で登録）。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function email() { return request.auth.token.email.lower(); }
+    // 最初の代表アカウント（名簿が空でも管理を始められるように）
+    function isRoot() { return signedIn() && email() == 'spicechocolategroup@gmail.com'; }
+    function hasAcct() {
+      return signedIn() && exists(/databases/$(database)/documents/accounts/$(email()));
+    }
+    function acct() { return get(/databases/$(database)/documents/accounts/$(email())).data; }
+    function member() { return isRoot() || hasAcct(); }
+    function level() {
+      return isRoot() ? 100 : {'owner': 100, 'area': 80, 'manager': 60, 'exec': 40, 'staff': 20}[acct().role];
+    }
+    function seesAll() { return member() && level() >= 80; }
+    function inOrg(orgId) { return hasAcct() && orgId in acct().orgIds; }
+    function canEditOrg(orgId) { return seesAll() || (inOrg(orgId) && level() >= 60); }
+
+    function canReadMeeting(m) {
+      return seesAll() || (
+        inOrg(m.orgId)
+        && (m.status == 'published' || level() >= 60)
+        && (m.visibility != 'exec' || level() >= 40)
+      );
+    }
+
+    // 店舗・部署 / 名簿: ログインした登録メンバーは閲覧、変更は代表のみ
+    match /orgs/{id} {
+      allow read: if member();
+      allow write: if member() && level() >= 100;
+    }
+    match /members/{id} {
+      allow read: if member();
+      allow write: if member() && level() >= 100;
+    }
+    // ログイン(メール)と役職・所属の対応表: 本人と代表のみ閲覧、変更は代表のみ
+    match /accounts/{mail} {
+      allow read: if signedIn() && (mail == email() || (member() && level() >= 100));
+      allow write: if member() && level() >= 100;
+    }
+
+    // 議事録
+    match /meetings/{id} {
+      allow read: if member() && canReadMeeting(resource.data);
+      allow create: if member() && canEditOrg(request.resource.data.orgId);
+      allow update: if member() && (
+        (canEditOrg(resource.data.orgId) && canEditOrg(request.resource.data.orgId))
+        // 閲覧できる人は宿題の完了チェックだけ変更できる
+        || (canReadMeeting(resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tasks', 'updatedAt']))
+      );
+      allow delete: if member() && canEditOrg(resource.data.orgId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

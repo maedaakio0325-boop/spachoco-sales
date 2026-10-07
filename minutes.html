@@ -107,8 +107,7 @@ details.tr pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;max
     <span class="navitem soon"><span class="ic">☆</span>夢ノート</span>
     <span class="navitem soon"><span class="ic">◎</span>統括</span>
     <div class="railfoot">
-      <label class="f" for="asUser">表示中のユーザー（権限の確認用）</label>
-      <select id="asUser"></select>
+      <div id="whoBox"></div>
       <div style="margin-top:8px" id="modeNote"></div>
     </div>
   </nav>
@@ -122,6 +121,10 @@ details.tr pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;max
     <main class="page" id="view"></main>
   </div>
 </div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="assets/firebase-config.js"></script>
 <script src="assets/os-core.js"></script>
 <script src="assets/minutes-demo.js"></script>
 <script src="assets/minutes.js"></script>

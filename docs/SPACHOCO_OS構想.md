@@ -7,7 +7,7 @@
 | 段階 | 内容 | 状態 |
 |---|---|---|
 | 1 | 議事録アプリの画面一式（一覧・検索・閲覧・編集・宿題管理・PDF・名簿と権限）。サンプルデータで操作可能 | ✅ `minutes.html` |
-| 2 | Firebase と接続。Googleログイン、権限をサーバー側で強制、データをクラウド保存 | 未着手 |
+| 2 | Firebase と接続。Googleログイン、権限をサーバー側で強制、データをクラウド保存 | ✅ コード完成（ルールはエミュレーターで34項目テスト済み）。本番反映待ち |
 | 3 | 録音アップロード → 文字起こし → Claude が毎回同じテンプレートで議事録化（名簿で人名補正） | 未着手 |
 | 4 | 売上インポートを同じ基盤へ移行。夢ノート・統括を追加 | 未着手 |
 
@@ -19,7 +19,10 @@ minutes.html          議事録アプリ
 assets/os.css         共通デザイントークン・部品（全アプリ共通）
 assets/os-core.js     共通コア：DOMヘルパー / 役職と権限(Perm) / 保存(Store) / ログイン(Session)
 assets/minutes.js     議事録アプリ本体
-assets/minutes-demo.js 架空のサンプルデータ
+assets/minutes-demo.js 架空のサンプルデータ（URLに ?demo を付けると表示）
+assets/firebase-config.js Firebase の接続設定（公開値）
+firebase/firestore.rules 権限ルール（サーバー側で強制）
+firebase/rules.test.mjs  権限ルールのテスト
 ```
 
 新しいアプリ（夢ノート等）は `os.css` と `os-core.js` を読み込み、同じ名簿（`orgs` / `members`）を参照する。
@@ -50,7 +53,8 @@ assets/minutes-demo.js 架空のサンプルデータ
 | 幹部 | 所属する店舗・部署 | ×（担当の宿題チェックのみ） |
 | 内勤・スタッフ | 所属する店舗・部署（「幹部以上のみ」の会議は除く・下書きは除く） | ×（担当の宿題チェックのみ） |
 
-第1段階は画面上の制御のみ。第2段階で Firestore セキュリティルールにより同じ規則をサーバー側で強制する。
+同じ規則を `firebase/firestore.rules` でサーバー側でも強制する。ログインした人の役職・所属は `accounts/{Googleアドレス}` に入り、
+代表が名簿画面でメンバーにアドレスを登録すると自動で作られる。最初の代表は spicechocolategroup@gmail.com。
 
 ## データの置き場所について
 

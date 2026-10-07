@@ -1,6 +1,6 @@
 /* ===== SPACHOCO OS  共通コア =====
    全アプリ共通: DOMヘルパー / 名簿マスタ / 権限 / データ保存(Store)。
-   第1段階はブラウザ内保存(DemoStore)。第2段階で同じ関数名のまま Firebase(Firestore) に差し替える。 */
+   保存先は Firebase(CloudStore) とブラウザ内保存(DemoStore) を同じ関数名で切り替える。 */
 (function (global) {
   'use strict';
 
@@ -74,26 +74,34 @@
     canAdmin(user) { return roleOf(user && user.role).level >= 100; },
   };
 
-  // ---------- Store (第1段階: ブラウザ内保存) ----------
+  // ---------- 保存先 ----------
+  // cloud: Firebase(Firestore)。ログイン必須で、権限はサーバー側のルール(firebase/firestore.rules)でも強制される。
+  // demo : ブラウザ内保存。URLに ?demo を付けるか、Firebaseが読み込めないときに使う。
   const KEY = 'spachoco-os-v1';
   const COLLS = ['orgs', 'members', 'meetings'];
+  const ROOT_EMAIL = 'spicechocolategroup@gmail.com';
+  const wantDemo = /[?&]demo\b/.test(location.search);
+  const cloudReady = !wantDemo && global.SPACHOCO_FIREBASE && global.firebase && global.firebase.initializeApp;
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+
   function load() {
     try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
   }
-  let mem = load();
+  let mem = null;
   function persist() {
     try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch (e) { /* 保存できない環境でも表示は続ける */ }
   }
-  const Store = {
+  const DemoStore = {
     mode: 'demo',
     async init(seed) {
-      if (!mem || !mem.orgs) { mem = JSON.parse(JSON.stringify(seed)); persist(); }
+      mem = load();
+      if (!mem || !mem.orgs) { mem = clone(seed); persist(); }
       for (const c of COLLS) mem[c] = mem[c] || [];
     },
     async list(coll) { return (mem[coll] || []).map((x) => ({ ...x })); },
-    async get(coll, id) { const x = (mem[coll] || []).find((o) => o.id === id); return x ? JSON.parse(JSON.stringify(x)) : null; },
+    async get(coll, id) { const x = (mem[coll] || []).find((o) => o.id === id); return x ? clone(x) : null; },
     async put(coll, obj) {
-      obj = JSON.parse(JSON.stringify(obj));
+      obj = clone(obj);
       obj.updatedAt = new Date().toISOString();
       const arr = mem[coll] || (mem[coll] = []);
       const i = arr.findIndex((o) => o.id === obj.id);
@@ -101,13 +109,81 @@
       persist();
       return obj;
     },
+    async patch(coll, id, fields) {
+      const x = (mem[coll] || []).find((o) => o.id === id);
+      if (x) { Object.assign(x, clone(fields), { updatedAt: new Date().toISOString() }); persist(); }
+    },
     async del(coll, id) { mem[coll] = (mem[coll] || []).filter((o) => o.id !== id); persist(); },
-    async reset(seed) { mem = JSON.parse(JSON.stringify(seed)); persist(); },
+    async reset(seed) { mem = clone(seed); persist(); },
   };
 
+  let fdb = null;
+  const CloudStore = {
+    mode: 'cloud',
+    async init() {
+      if (!global.firebase.apps.length) global.firebase.initializeApp(global.SPACHOCO_FIREBASE);
+      fdb = global.firebase.firestore();
+    },
+    // 議事録は、その人が読める範囲だけを問い合わせる(ルールが範囲外の問い合わせを拒否するため)
+    async list(coll, user) {
+      if (coll !== 'meetings') return (await fdb.collection(coll).get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+      const r = roleOf(user && user.role);
+      if (r.all) return (await fdb.collection('meetings').get()).docs.map((d) => ({ ...d.data(), id: d.id }));
+      const orgIds = (user && user.orgIds) || [];
+      const out = [];
+      for (let i = 0; i < orgIds.length; i += 30) {
+        let q = fdb.collection('meetings').where('orgId', 'in', orgIds.slice(i, i + 30));
+        if (r.level < roleOf('manager').level) q = q.where('status', '==', 'published');
+        if (r.level < roleOf('exec').level) q = q.where('visibility', '==', 'org');
+        (await q.get()).docs.forEach((d) => out.push({ ...d.data(), id: d.id }));
+      }
+      return out;
+    },
+    async get(coll, id) {
+      try { const d = await fdb.collection(coll).doc(id).get(); return d.exists ? { ...d.data(), id: d.id } : null; } catch (e) { return null; }
+    },
+    async put(coll, obj) {
+      obj = clone(obj);
+      obj.updatedAt = new Date().toISOString();
+      await fdb.collection(coll).doc(obj.id).set(obj);
+      return obj;
+    },
+    async patch(coll, id, fields) {
+      await fdb.collection(coll).doc(id).update({ ...clone(fields), updatedAt: new Date().toISOString() });
+    },
+    async del(coll, id) { await fdb.collection(coll).doc(id).delete(); },
+  };
+  const Store = cloudReady ? CloudStore : DemoStore;
+
   // ---------- ログイン中のユーザー ----------
-  // 第1段階: 名簿から「誰として見るか」を切り替えて権限を確認できる。第2段階で Googleログインに置き換え。
-  const Session = {
+  // cloud: Googleログイン → accounts/{メール} で役職・所属を引く。未登録なら閲覧できない。
+  // demo : 名簿から「誰として見るか」を切り替えて権限を確認できる。
+  const Session = cloudReady ? {
+    cloud: true,
+    async waitAuth() {
+      const auth = global.firebase.auth();
+      return new Promise((res) => { const off = auth.onAuthStateChanged((u) => { off(); res(u); }); });
+    },
+    async signIn() {
+      const p = new global.firebase.auth.GoogleAuthProvider();
+      p.setCustomParameters({ prompt: 'select_account' });
+      await global.firebase.auth().signInWithPopup(p);
+    },
+    async signOut() { await global.firebase.auth().signOut(); },
+    // 戻り値: null(未ログイン) / {unregistered:true, email} / ユーザー
+    async current() {
+      const u = global.firebase.auth().currentUser;
+      if (!u) return null;
+      const email = (u.email || '').toLowerCase();
+      const a = await CloudStore.get('accounts', email);
+      if (a) return { memberId: a.memberId || '', name: a.name || u.displayName || email, role: a.role, orgIds: a.orgIds || [], email };
+      if (email === ROOT_EMAIL) return { memberId: '', name: u.displayName || '代表', role: 'owner', orgIds: [], email };
+      return { unregistered: true, email };
+    },
+    switchTo() {},
+  } : {
+    cloud: false,
+    async waitAuth() { return null; },
     async current() {
       const members = await Store.list('members');
       let id = null;
