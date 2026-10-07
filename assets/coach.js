@@ -23,8 +23,15 @@
 
   function kbFor(kb, scene) {
     // テーマ名に入っている語の数が多いものを優先（同点は登録順）
-    return kb.filter((k) => k.kind !== 'manual').map((k, i) => ({ k, i, n: scene.keys.filter((w) => (k.title || '').includes(w)).length }))
+    return kb.filter((k) => k.kind !== 'manual' && !(k.title || '').startsWith('会長の言葉')).map((k, i) => ({ k, i, n: scene.keys.filter((w) => (k.title || '').includes(w)).length }))
       .filter((x) => x.n).sort((a, b) => b.n - a.n || a.i - b.i).slice(0, 3).map((x) => x.k);
+  }
+  // 会長の言葉（教材への書き込み）から、相談に近いものを1つ添える
+  function kaichoFor(kb, scene) {
+    const ks = kb.filter((k) => (k.title || '').startsWith('会長の言葉'));
+    if (!ks.length) return null;
+    const score = (k) => scene.keys.reduce((n, w) => n + ((k.points || []).join('').split(w).length - 1), 0);
+    return ks.map((k, i) => ({ k, i, n: score(k) })).sort((a, b) => b.n - a.n || a.i - b.i)[0].k;
   }
   function kbText(items) {
     if (!items.length) return '（スパチョコの教えはまだ登録されていません。一般的なコーチングの進め方で構いません）';
@@ -43,6 +50,7 @@
       '・質問は一度に1つだけ。私が答えてから次に進む',
       '・答えを押しつけず、私が自分で選べるように問いかける（決めるのは私）',
       '・ほめる・認めることを忘れない。責めない',
+      '・「会長の言葉」があれば、ここぞという場面で1つだけ、会長の言葉として紹介してよい',
       '・最後に「次の7日間でやる行動」を3つ以内、数字と期限つきで一緒に決める',
       '・お金、法律、心と体の不調など専門的なことは、上司や専門家に相談するよう勧める',
       '',
@@ -86,7 +94,8 @@
               h('div', { class: 'small', style: { marginTop: '8px', color: 'var(--accent)' }, text: `関連する教え ${kbFor(kb, sc).length}件` })))))));
       return;
     }
-    const items = kbFor(kb, scene);
+    const kaicho = kaichoFor(kb, scene);
+    const items = [...kbFor(kb, scene), ...(kaicho ? [kaicho] : [])];
     const f = { situation: '', goal: '', problem: '' };
     const ta = (key, ph) => { const e = h('textarea', { rows: 3, placeholder: ph }); e.addEventListener('input', () => (f[key] = e.value.trim())); return e; };
     const me = { role: OS.roleOf(S.user.role).name };
