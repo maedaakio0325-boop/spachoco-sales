@@ -23,6 +23,12 @@ window.MINUTES_DEMO = {
     { id: 'm_nk1',   name: '内勤リーダー', aliases: [], role: 'manager', orgIds: ['naikin'] },
     { id: 'm_nk2',   name: '内勤スタッフD', aliases: [], role: 'staff', orgIds: ['naikin', 'nika'] },
   ],
+  // スパチョコの教えのサンプル（一般的な内容。本番の教えは研修録音から作り、ログイン先に取り込む）
+  kb: [
+    { id: 'kb-goal', title: '目標設定（サンプル）', points: ['期限と数字を決める', '結果目標と行動目標を分ける', '毎日できる行動まで落とす'], questions: ['3か月後、どうなっていたら最高ですか？', 'そのために毎日できることは何ですか？'], pitfalls: ['目標が大きすぎて止まる → 1週間でできる大きさに分ける'], sources: ['サンプル'] },
+    { id: 'kb-vision', title: 'ビジョン・理想の自分（サンプル）', points: ['なりたい姿を言葉にする', '理由（なぜそうなりたいか）を書く'], questions: ['1年後、どんな自分になっていたいですか？', 'それはなぜですか？'], pitfalls: ['正解を探して書けない → 今の気持ちで一度書いてみる'], sources: ['サンプル'] },
+  ],
+  karte: [],
   meetings: [
     {
       id: 'demo1', orgId: 'nika', type: '経営者会議', status: 'published', visibility: 'exec',
