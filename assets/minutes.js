@@ -5,7 +5,7 @@
   'use strict';
   const { h, toast, uid, fmtDate, ROLES, roleOf, VIS, Perm, Store, Session } = OS;
 
-  const TYPES = ['経営者会議', '幹部会議', '部署会議', '全体会議', 'その他'];
+  const TYPES = ['経営者会議', '幹部会議', '朝礼', '部署会議', '全体会議', '1on1', 'その他'];
   const S = { user: null, orgs: [], members: [], meetings: [], filter: { org: '', q: '', month: '', type: '', status: '' } };
   try { Object.assign(S.filter, JSON.parse(sessionStorage.getItem('mtg-filter') || '{}')); } catch (e) {}
 
@@ -132,7 +132,7 @@
         h('div', { class: 'meta', text: `${fmtDate(m.date)} ${m.start || ''}${m.end ? '〜' + m.end : ''}${m.place ? '｜' + m.place : ''}` }),
         h('div', { class: 'gist', text: (m.decisions || []).slice(0, 3).join('／') || (m.purpose || [])[0] || '' })),
       h('div', { class: 'side' },
-        m.status === 'draft' ? h('span', { class: 'chip warn', text: '下書き' }) : h('span', { class: 'chip', text: m.type }),
+        m.stage === 'planned' ? h('span', { class: 'chip accent', text: '準備中' }) : m.status === 'draft' ? h('span', { class: 'chip warn', text: '下書き' }) : h('span', { class: 'chip', text: m.type }),
         m.visibility === 'exec' ? h('span', { class: 'chip accent', text: '幹部以上' }) : null,
         open.length ? h('span', { class: 'chip' + (open.some(isOverdue) ? ' err' : ''), text: `宿題 ${open.length}` }) : null));
   }
@@ -151,6 +151,7 @@
     setTop(titleOf(m), m.status === 'draft' ? '下書き（所属の編集者のみ表示）' : '', [
       h('a', { class: 'btn ghost', href: '#/', text: '← 一覧' }),
       h('button', { class: 'btn', onclick: () => window.print() }, 'PDF・印刷'),
+      canEdit && (m.agenda || []).length && m.stage !== 'done' ? h('a', { class: 'btn', href: `#/run/${m.id}`, text: '▶ 進行する' }) : null,
       canEdit ? h('a', { class: 'btn primary', href: `#/m/${m.id}/edit`, text: '編集' }) : null,
     ]);
 
@@ -501,12 +502,17 @@
       resetBtn ? h('div', {}, resetBtn) : null));
   }
 
+  // 会議の準備・進行モード(meeting-run.js)に渡す道具
+  const CTX = { S, setTop, markNav, $view, orgOf, section, reload, refreshChrome, setTaskDone };
+
   // ======================= ルーター =======================
   function route() {
     const p = (location.hash.replace(/^#/, '') || '/').split('/').filter(Boolean);
     if (p[0] === 'm' && p[1] && p[2] === 'edit') viewEdit(p[1]);
     else if (p[0] === 'm' && p[1]) viewDetail(p[1]);
     else if (p[0] === 'new') viewNew();
+    else if (p[0] === 'prep') window.MeetingRun.viewPrep(CTX, p[1]);
+    else if (p[0] === 'run' && p[1]) window.MeetingRun.viewRun(CTX, p[1]);
     else if (p[0] === 'tasks') viewTasks();
     else if (p[0] === 'settings') viewSettings();
     else viewList();
