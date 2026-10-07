@@ -22,10 +22,26 @@
   };
 
   // ---------- アジェンダの自動作成 ----------
-  function prevMeeting(ctx, orgId, date) {
-    return ctx.S.meetings.filter((m) => m.orgId === orgId && m.date < date && (m.tasks || []).length)
-      .sort((a, b) => (b.date + (b.start || '')).localeCompare(a.date + (a.start || '')))[0];
+  // その店舗・部署で、まだ終わっていない宿題すべて（前回に限らず、過去から残っているものも）。古いものから
+  const PROG = { '': '未回答', done: '完了', doing: '途中', todo: '未着手', drop: 'やめる' };
+  const PROG_CHIP = { '': 'err', done: 'ok', doing: 'warn', todo: 'err', drop: '' };
+  function openTasks(ctx, orgId, date, excludeId) {
+    const out = [];
+    ctx.S.meetings.filter((m) => m.orgId === orgId && m.id !== excludeId && (!date || m.date <= date))
+      .sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))
+      .forEach((m) => (m.tasks || []).forEach((t) => { if (!t.done) out.push({ m, t }); }));
+    return out;
   }
+  // 宿題の進捗（事前報告）を、その宿題が決まった会議に保存する
+  async function updateTask(ctx, m, taskId, fields) {
+    const fresh = await OS.Store.get('meetings', m.id);
+    if (!fresh) throw new Error('not found');
+    const tasks = (fresh.tasks || []).map((x) => (x.id === taskId ? { ...x, ...fields } : x));
+    await OS.Store.patch('meetings', m.id, { tasks });
+    await ctx.reload(); ctx.refreshChrome();
+  }
+  const md = (d) => (d ? d.slice(5).replace('-', '/') : '');
+
   // 同じ店舗・同じ種類の過去の会議で、議題ごとに実際にかかった時間（分）
   function learned(ctx, orgId, type) {
     const out = {};
@@ -73,11 +89,12 @@
       lines.push(`${i + 1}. ${t ? t + ' ' : ''}${it.title}（${it.minutes}分・${KIND[it.kind] || ''}）`);
       t = addMin(t, it.minutes);
     });
-    const prev = prevMeeting(ctx, m.orgId, m.date);
-    const open = prev ? (prev.tasks || []).filter((x) => !x.done) : [];
+    const open = openTasks(ctx, m.orgId, m.date, m.id).filter(({ t }) => !t.progress || t.progress.status !== 'drop');
     if (open.length) {
-      lines.push('', '■前回の宿題（冒頭で確認します）');
-      open.forEach((x) => lines.push(`・${x.text}（担当：${x.assignee || '未定'}${x.due ? '／期限：' + x.due.slice(5).replace('-', '/') : ''}）`));
+      lines.push('', '■事前の進捗報告のお願い（会議の前日までに、このLINEに返信してください）',
+        '会議では報告を聞く時間を取りません。止まっているものだけを会議で扱います。',
+        '「番号・完了／途中／未着手／やめる・一言」で返信してください（例：3 途中 来週水曜に提出）');
+      open.forEach(({ m: src, t: x }, i) => lines.push(`${i + 1}. ${x.text}（担当：${x.assignee || '未定'}${x.due ? '／期限：' + md(x.due) : ''}／${md(src.date)}の会議で決定）`));
     }
     const decide = (m.agenda || []).filter((it) => it.kind === 'decide' && !it.auto);
     lines.push('', '■事前のお願い');
@@ -181,6 +198,32 @@
     ]);
     const orgSel = sel('orgId', editable.map((o) => [o.id, o.name]));
     const typeSel = sel('type', Object.keys(window.MEETING_TEMPLATES).map((t) => [t, t]));
+    // 事前の進捗確認：返信を受けたらここに記録する（会議では止まっているものだけ扱う）
+    const progBox = h('div', { class: 'grid', style: { gap: '6px' } });
+    const progSum = h('div', { class: 'row', style: { gap: '6px' } });
+    function drawProgress() {
+      const open = openTasks(ctx, m.orgId, m.date, m.id);
+      const cnt = {}; open.forEach(({ t }) => { const k = (t.progress && t.progress.status) || ''; cnt[k] = (cnt[k] || 0) + 1; });
+      progSum.replaceChildren(...Object.keys(PROG).filter((k) => cnt[k]).map((k) => h('span', { class: 'chip ' + PROG_CHIP[k], text: `${PROG[k]} ${cnt[k]}` })));
+      if (!open.length) { progBox.replaceChildren(h('div', { class: 'small muted', text: 'この店舗・部署に、終わっていない宿題はありません。' })); return; }
+      progBox.replaceChildren(...open.map(({ m: src, t }, i) => {
+        const pr = t.progress || {};
+        const st = h('select', { 'aria-label': '進捗', style: { width: '110px', flex: 'none' } }, Object.entries(PROG).map(([v, l]) => h('option', { value: v, selected: (pr.status || '') === v, text: l })));
+        const note = h('input', { type: 'text', value: pr.note || '', placeholder: '一言（返信の内容）', 'aria-label': '一言' });
+        const save = async () => {
+          const progress = { status: st.value, note: note.value.trim(), at: new Date().toISOString(), by: S.user.memberId || S.user.email || '' };
+          try { await updateTask(ctx, src, t.id, { progress, ...(st.value === 'done' ? { done: true, doneAt: progress.at } : {}) }); drawProgress(); toast('進捗を記録しました'); } catch (e) { toast('保存できませんでした'); }
+        };
+        st.addEventListener('change', save); note.addEventListener('change', save);
+        return h('div', { class: 'row', style: { flexWrap: 'nowrap', alignItems: 'flex-start', borderBottom: '1px dashed var(--line)', paddingBottom: '6px' } },
+          h('span', { class: 'num small muted', style: { width: '22px', flex: 'none', paddingTop: '9px' }, text: String(i + 1) }),
+          h('div', { style: { flex: '1 1 auto', minWidth: 0 } },
+            h('div', { text: t.text }),
+            h('div', { class: 'small muted', text: `担当：${t.assignee || '未定'}${t.due ? '／期限：' + md(t.due) : ''}／${md(src.date)}の会議で決定` }),
+            h('div', { class: 'row', style: { marginTop: '6px', flexWrap: 'nowrap' } }, st, note)));
+      }));
+    }
+
     $view.replaceChildren(h('div', { class: 'grid', style: { maxWidth: '980px' } },
       section('会議の基本', h('div', { class: 'form' },
         h('div', { class: 'two' }, fld('店舗・部署', orgSel), fld('会議の種類', typeSel)),
@@ -188,9 +231,16 @@
         fld('目的（なぜ集まるか）', purposeIn),
         fld('ゴール（終わったとき何が決まっていれば成功か）', goalIn),
         h('div', { class: 'row' }, h('button', { class: 'btn sm', onclick: regen }, '会議の型からアジェンダを作り直す'), h('span', { class: 'small muted', text: '店舗・種類・全体の時間を変えたら押してください' })))),
+      h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: '事前の進捗確認（会議の前に集める）' }), h('span', { class: 'spacer' }), progSum),
+        h('div', { class: 'bd grid', style: { gap: '10px' } },
+          h('div', { class: 'small muted', text: '「アジェンダを送る」の文面で、終わっていない宿題の進捗を前日までに返信してもらいます。返信を受けたら、ここに記録してください。完了・やめるにしたものは会議で扱いません。' }),
+          progBox)),
       h('div', { class: 'card' }, h('div', { class: 'hd' }, h('h3', { text: 'アジェンダ・時間配分・進行スクリプト' }), h('span', { class: 'spacer' }), sumBox),
         h('div', { class: 'bd' }, itemsBox))));
     drawItems();
+    drawProgress();
+    orgSel.addEventListener('change', drawProgress);
+    $view.querySelector('input[type=date]').addEventListener('change', drawProgress);
   }
 
   function regenerate(ctx, m, total) {
@@ -223,7 +273,7 @@
     const usedSec = (it) => (st.used[it.id] || 0) + (it === item() && !st.paused && st.itemStart ? (now() - st.itemStart) / 1000 : 0);
     const planSec = (it) => (Number(it.minutes) + (st.extra[it.id] || 0)) * 60;
     const vars = { purpose: (m.purpose || [])[0] || '', goal: m.goal || '', end: m.end || '', org: orgOf(m.orgId).name };
-    const prev = prevMeeting(ctx, m.orgId, m.date);
+    const allOpen = () => openTasks(ctx, m.orgId, m.date, m.id);
     const members = S.members.filter((x) => (x.orgIds || []).includes(m.orgId) || OS.roleOf(x.role).all);
     let beeped = {};
 
@@ -314,7 +364,9 @@
     function draw() {
       const it = item();
       const next = m.agenda[st.idx + 1];
-      const prevOpen = it.auto === 'prevTasks' && prev ? (prev.tasks || []).filter((t) => !t.done) : [];
+      const opens = it.auto === 'prevTasks' ? allOpen() : [];
+      const prevOpen = opens.filter(({ t }) => !t.progress || t.progress.status !== 'drop');
+      const reportedDone = it.auto === 'prevTasks' ? ctx.S.meetings.filter((x) => x.orgId === m.orgId && x.id !== m.id).reduce((n, x) => n + (x.tasks || []).filter((t) => t.done && t.progress && t.progress.status === 'done').length, 0) : 0;
       setTop(`${orgOf(m.orgId).name} ${m.type}`, `${fmtDate(m.date)} ${m.start || ''}〜${m.end || ''}`, [
         h('a', { class: 'btn ghost', href: '#/prep/' + m.id, text: '準備に戻る' }),
         h('button', { class: 'btn danger', onclick: finish }, '会議を終了して議事録へ'),
@@ -338,12 +390,14 @@
               h('div', { style: { borderLeft: '3px solid var(--accent)', background: 'var(--accent-soft)', padding: '12px 14px', borderRadius: '0 var(--radius-sm) var(--radius-sm) 0' } },
                 h('div', { class: 'small muted', style: { marginBottom: '4px' }, text: '進行スクリプト' }),
                 it.script.filter(Boolean).map((s) => h('p', { style: { margin: '0 0 4px', fontSize: '15px' }, text: fill(s, vars) }))),
-              prevOpen.length ? h('div', {}, h('div', { class: 'small muted', style: { marginBottom: '6px' }, text: '前回の宿題（完了したらチェック）' }),
-                h('ul', { class: 'tasklist' }, prevOpen.map((t) => {
+              it.auto === 'prevTasks' ? h('div', {}, h('div', { class: 'small muted', style: { marginBottom: '6px' }, text: `止まっている宿題だけを扱います（事前報告で完了 ${reportedDone}件・やめる ${opens.length - prevOpen.length}件は省略）` }),
+                prevOpen.length ? h('ul', { class: 'tasklist' }, prevOpen.map(({ m: src, t }) => {
                   const cb = h('input', { type: 'checkbox', 'aria-label': '完了' });
-                  cb.addEventListener('change', async () => { try { await ctx.setTaskDone(prev, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); } });
-                  return h('li', {}, cb, h('div', {}, h('div', { class: 'tx', text: t.text }), h('div', { class: 'who', text: `担当：${t.assignee || '未定'}${t.due ? '　期限：' + fmtDate(t.due, false) : ''}` })));
-                }))) : null,
+                  cb.addEventListener('change', async () => { try { await ctx.setTaskDone(src, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); } });
+                  const pr = t.progress || {};
+                  return h('li', {}, cb, h('div', {}, h('div', { class: 'tx' }, h('span', { class: 'chip ' + PROG_CHIP[pr.status || ''], style: { marginRight: '6px' }, text: PROG[pr.status || ''] }), t.text),
+                    h('div', { class: 'who', text: `担当：${t.assignee || '未定'}${t.due ? '　期限：' + fmtDate(t.due, false) : ''}　${md(src.date)}の会議で決定${pr.note ? '　報告：' + pr.note : ''}` })));
+                })) : h('div', { class: 'small', text: '止まっている宿題はありません。次の議題へ進みましょう。' })) : null,
               recap ? h('div', { class: 'banner warn', text: '担当・期限が空いている宿題は、右の一覧で赤く表示されます。この場で決めてから終わりましょう。' }) : null,
               next ? h('div', { class: 'small muted', text: `次：${next.title}（${next.minutes}分）` }) : h('div', { class: 'small muted', text: '最後の議題です' }))),
           captureBox()),
