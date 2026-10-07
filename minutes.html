@@ -3,8 +3,98 @@
 <title>SPACHOCO 議事録</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Old+Mincho:wght@600&family=Roboto+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="assets/os.css">
+<style>
+/* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
+   落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
+body.app-minutes{
+  --ground:#F5F3EE; --surface:#FFFFFF; --surface-2:#EFECE4; --line:#E4DFD4; --line-strong:#CFC8B8;
+  --text:#1E2A29; --text-2:#46524F; --text-3:#7D8784;
+  --accent:#2C6E68; --accent-2:#B8913A; --accent-soft:rgba(44,110,104,.10);
+  --ok:#2F8A5B; --warn:#A8741A; --err:#C2413A;
+  --ok-bg:rgba(47,138,91,.10); --warn-bg:rgba(168,116,26,.12); --err-bg:rgba(194,65,58,.10);
+  --shadow:0 1px 2px rgba(30,42,41,.05), 0 6px 18px rgba(30,42,41,.05);
+  --radius:12px; --radius-sm:8px;
+  --sans:"Noto Sans JP","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --serif:"Zen Old Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --rail:#1D3836; --rail-2:#264845; --rail-text:#D6E3E0; --rail-text-3:#8FA9A5;
+}
+@media (prefers-color-scheme: dark){
+  body.app-minutes:not([data-theme="light"]){
+    --ground:#0F1615; --surface:#162120; --surface-2:#1C2928; --line:#263533; --line-strong:#344644;
+    --text:#E6EEEC; --text-2:#B3C2BF; --text-3:#7E908D;
+    --accent:#6CC0B6; --accent-2:#D9B45C; --accent-soft:rgba(108,192,182,.14);
+    --ok:#5BC48C; --warn:#E3B04B; --err:#EF7D74;
+    --ok-bg:rgba(91,196,140,.12); --warn-bg:rgba(227,176,75,.12); --err-bg:rgba(239,125,116,.12);
+    --rail:#0B1211; --rail-2:#16211F;
+  }
+}
+body.app-minutes{letter-spacing:.01em}
+body.app-minutes .rail{background:var(--rail);border-right:none;color:var(--rail-text)}
+body.app-minutes .brand b{color:#fff}
+body.app-minutes .brand span,body.app-minutes .railsec{color:var(--rail-text-3)}
+body.app-minutes .brand .mark{background:linear-gradient(140deg,var(--accent-2),#E6CF8E);color:#1D3836;border-radius:50%}
+body.app-minutes .navitem{color:var(--rail-text)}
+body.app-minutes .navitem:hover{background:var(--rail-2);color:#fff}
+body.app-minutes .navitem.on{background:rgba(255,255,255,.10);color:#fff;box-shadow:inset 3px 0 0 var(--accent-2)}
+body.app-minutes .navitem .badge{color:var(--accent-2)}
+body.app-minutes .railfoot{border-top-color:rgba(255,255,255,.12);color:var(--rail-text-3)}
+body.app-minutes .railfoot select{background:var(--rail-2);color:var(--rail-text);border-color:rgba(255,255,255,.15)}
+body.app-minutes .railfoot .btn.ghost{color:var(--rail-text)}
+body.app-minutes .topbar h1{font-family:var(--serif);font-weight:600;font-size:18px}
+body.app-minutes .doc h2.t{font-family:var(--serif);font-weight:600}
+body.app-minutes .monthhd{font-family:var(--serif);font-size:14px;color:var(--text-2)}
+body.app-minutes .btn.primary{background:var(--accent);border-color:var(--accent)}
+body.app-minutes .chip.accent{color:var(--accent)}
+
+/* 会議中のステージ表示：周りを暗くして、タイマーとスクリプトに集中する */
+body.app-minutes.stage{
+  --ground:#0E1A19; --surface:#152523; --surface-2:#1C302E; --line:#25403D; --line-strong:#33524E;
+  --text:#F1F6F5; --text-2:#C3D3D0; --text-3:#86A09C;
+  --accent:#7FD1C6; --accent-soft:rgba(127,209,198,.14); --accent-2:#E2BF6A;
+  --warn:#F0C25A; --err:#FF8A80; --ok:#6FD39C;
+  --warn-bg:rgba(240,194,90,.14); --err-bg:rgba(255,138,128,.14); --ok-bg:rgba(111,211,156,.12);
+  --shadow:none;
+}
+body.app-minutes.stage .topbar{background:rgba(14,26,25,.9)}
+body.app-minutes.stage .btn.primary{color:#0E1A19}
+
+/* ===== iPad・ノートパソコン前提の調整 ===== */
+/* 指で押しやすい大きさ（目安44px）。iPadで入力時に画面が拡大しないよう入力欄は16px */
+body.app-minutes .btn{min-height:40px;padding:8px 14px}
+body.app-minutes .btn.sm{min-height:34px;padding:5px 11px}
+body.app-minutes .navitem{min-height:42px}
+body.app-minutes .orgchip{min-height:36px;padding:6px 13px}
+body.app-minutes select,body.app-minutes input[type=text],body.app-minutes input[type=date],body.app-minutes input[type=time],
+body.app-minutes input[type=search],body.app-minutes input[type=number],body.app-minutes textarea{font-size:16px;min-height:40px}
+body.app-minutes input[type=checkbox]{width:20px;height:20px}
+body.app-minutes .tasklist input{width:20px;height:20px}
+/* iPad縦（〜1024px）でも左メニューは残し、幅を詰める */
+@media (min-width:700px) and (max-width:1100px){
+  body.app-minutes .shell{grid-template-columns:184px 1fr}
+  body.app-minutes .page{padding:18px 18px 56px}
+  body.app-minutes .layout2{grid-template-columns:minmax(0,1fr) 260px}
+  body.app-minutes .filters{grid-template-columns:1fr 1fr 1fr}
+  body.app-minutes .filters .q{grid-column:1/-1}
+}
+@media (min-width:700px){
+  body.app-minutes .rail{position:sticky;transform:none;width:auto;box-shadow:none}
+  body.app-minutes .btn.menubtn{display:none}
+  body.app-minutes .shell{grid-template-columns:184px 1fr}
+}
+@media (min-width:1101px){ body.app-minutes .shell{grid-template-columns:212px 1fr} }
+/* 会議中は左メニューを隠して全画面。縦のiPadでは記録欄を下に回す */
+body.app-minutes.stage .shell{grid-template-columns:1fr!important}
+body.app-minutes.stage .rail{display:none}
+body.app-minutes.stage .page{max-width:1400px}
+body.app-minutes.stage .layout2{grid-template-columns:minmax(0,1fr) 340px}
+@media (max-width:1000px){ body.app-minutes.stage .layout2{grid-template-columns:1fr} }
+body.app-minutes.stage .runctl .btn{min-height:56px;font-size:16px;padding:10px 20px}
+body.app-minutes.stage .btn.sm{min-height:44px;font-size:14px;padding:8px 14px}
+body.app-minutes.stage .kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line-strong);border-radius:4px;padding:0 5px;color:var(--text-3)}
+@media (hover:none){ body.app-minutes.stage .kbdhint{display:none} }
+</style>
 <style>
 /* ---------- 議事録アプリ固有 ---------- */
 .filters{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px}
@@ -93,10 +183,10 @@ details.tr pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;max
   .tasklist input{display:none}
 }
 </style>
-</head><body>
+</head><body class="app-minutes">
 <div class="shell">
   <nav class="rail" id="rail" aria-label="アプリ">
-    <div class="brand"><div class="mark">SC</div><div><b>SPACHOCO OS</b><span>Operations</span></div></div>
+    <div class="brand"><div class="mark">議</div><div><b>SPACHOCO 議事録</b><span>Meeting OS</span></div></div>
     <a class="navitem" href="index.html"><span class="ic">¥</span>売上インポート</a>
     <div class="railsec">議事録</div>
     <a class="navitem" href="#/" data-nav="list"><span class="ic">≡</span>議事録一覧</a>

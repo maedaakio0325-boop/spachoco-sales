@@ -200,13 +200,15 @@
 
   // ---------- 進行画面（タイムキーパー） ----------
   let timer = null;
+  let keyHandler = null;
   function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
-  window.addEventListener('hashchange', () => { if (!/^#\/run\//.test(location.hash)) stopTimer(); });
+  window.addEventListener('hashchange', () => { if (!/^#\/run\//.test(location.hash)) { stopTimer(); document.body.classList.remove('stage'); } });
 
   function viewRun(ctx, id) {
     const { S, setTop, markNav, $view, orgOf } = ctx;
     markNav('prep');
     stopTimer();
+    document.body.classList.add('stage');
     const m = S.meetings.find((x) => x.id === id);
     if (!m || !OS.Perm.canEdit(S.user, m) || !(m.agenda || []).length) {
       setTop('会議の進行', ''); $view.replaceChildren(h('div', { class: 'card empty', text: 'この会議は進行できません（準備がされていないか、権限がありません）。' })); return;
@@ -327,11 +329,12 @@
               h('h2', { style: { margin: 0, fontSize: '24px' }, text: it.title }),
               h('div', { class: 'row', style: { alignItems: 'flex-end', gap: '18px' } }, timerEl,
                 h('div', { class: 'small muted', style: { paddingBottom: '10px' }, text: `持ち時間 ${Math.round(planSec(it) / 60)}分` })),
-              h('div', { class: 'row' },
+              h('div', { class: 'row runctl' },
                 h('button', { class: 'btn', onclick: () => go(-1), disabled: st.idx === 0 }, '◀ 前へ'),
                 h('button', { class: 'btn primary', onclick: toggle }, st.paused ? (st.startedAt ? '▶ 再開' : '▶ スタート') : '⏸ 一時停止'),
                 h('button', { class: 'btn', onclick: () => { st.extra[it.id] = (st.extra[it.id] || 0) + 3; persist(); tick(); toast('3分延長しました'); } }, '＋3分延長'),
                 h('button', { class: 'btn', onclick: () => go(1), disabled: st.idx === m.agenda.length - 1 }, '次へ ▶')),
+              h('div', { class: 'small muted kbdhint' }, 'キーボード：', h('span', { class: 'kbd', text: 'Space' }), ' スタート／一時停止　', h('span', { class: 'kbd', text: '←' }), h('span', { class: 'kbd', text: '→' }), ' 前／次　', h('span', { class: 'kbd', text: '+' }), ' 3分延長'),
               h('div', { style: { borderLeft: '3px solid var(--accent)', background: 'var(--accent-soft)', padding: '12px 14px', borderRadius: '0 var(--radius-sm) var(--radius-sm) 0' } },
                 h('div', { class: 'small muted', style: { marginBottom: '4px' }, text: '進行スクリプト' }),
                 it.script.filter(Boolean).map((s) => h('p', { style: { margin: '0 0 4px', fontSize: '15px' }, text: fill(s, vars) }))),
@@ -354,7 +357,29 @@
     }
     draw();
     timer = setInterval(tick, 1000);
+
+    // ノートパソコン：キーボードで進行（入力中は反応しない）
+    const onKey = (e) => {
+      if (!/^#\/run\//.test(location.hash)) { document.removeEventListener('keydown', onKey); keyHandler = null; return; }
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+      if (e.key === ' ') { e.preventDefault(); toggle(); }
+      else if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === '+') { st.extra[item().id] = (st.extra[item().id] || 0) + 3; persist(); tick(); toast('3分延長しました'); }
+    };
+    if (keyHandler) document.removeEventListener('keydown', keyHandler);
+    keyHandler = onKey;
+    document.addEventListener('keydown', onKey);
+    // iPad：会議中に画面が消えないようにする
+    requestWake();
   }
+
+  let wake = null;
+  async function requestWake() {
+    try { if ('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => (wake = null)); } } catch (e) { /* 使えない端末では何もしない */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && /^#\/run\//.test(location.hash)) requestWake(); });
+  window.addEventListener('hashchange', () => { if (!/^#\/run\//.test(location.hash) && wake) { wake.release().catch(() => {}); wake = null; } });
 
   window.MeetingRun = { viewPrep, viewRun, buildAgenda, agendaText };
 })();
