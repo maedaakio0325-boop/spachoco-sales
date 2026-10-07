@@ -102,7 +102,7 @@
     const apps = [sec('スパチョコのアプリ'),
       level() >= 60 ? h('a', { class: 'navitem', href: 'index.html' }, h('span', { class: 'ic', text: '¥' }), '売上') : null,
       soon('￥', '給料（準備中）'), soon('☆', '夢ノート（準備中）'), level() >= 60 ? soon('◎', '統括（準備中）') : null];
-    const admin = level() >= 60 ? [sec('管理'), item('settings', '#/settings', '⚙', '名簿・権限')] : [];
+    const admin = level() >= 60 ? [sec('管理'), item('orgchart', '#/orgchart', '⌘', '組織図'), item('settings', '#/settings', '⚙', '名簿・権限')] : [];
     document.getElementById('navBox').replaceChildren(...(isCast() ? [grow, meet, apps] : [meet, grow, apps, admin]).flat().filter(Boolean));
 
     document.getElementById('viewToggle').replaceChildren(
@@ -473,7 +473,7 @@
   function viewSettings() {
     markNav('settings');
     const admin = Perm.canAdmin(S.user);
-    setTop('名簿・権限', admin ? '店舗・部署と、メンバーの役職・所属を管理' : '閲覧のみ（変更は代表のみ）');
+    setTop('名簿・権限', admin ? '店舗・部署と、メンバーの役職・所属を管理' : '閲覧のみ（変更は代表のみ）', [h('a', { class: 'btn', href: '#/orgchart', text: '組織図を見る' })]);
 
     const roleTable = h('table', { class: 'tbl' },
       h('thead', {}, h('tr', {}, ['役職', '見られる議事録', '作成・編集'].map((x) => h('th', { text: x })))),
@@ -604,6 +604,7 @@
     else if (p[0] === 'run' && p[1]) window.MeetingRun.viewRun(CTX, p[1]);
     else if (p[0] === 'tasks') viewTasks(p[1] === 'mine');
     else if (p[0] === 'settings') viewSettings();
+    else if (p[0] === 'orgchart') window.OrgChart.view(CTX);
     else viewList();
     window.scrollTo(0, 0);
   }
