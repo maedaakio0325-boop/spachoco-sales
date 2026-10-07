@@ -526,6 +526,7 @@
     else if (p[0] === 'prep') window.MeetingRun.viewPrep(CTX, p[1]);
     else if (p[0] === 'coach') window.Coach.viewCoach(CTX, p[1]);
     else if (p[0] === 'karte') window.Coach.viewKarte(CTX, p[1]);
+    else if (p[0] === 'learn') window.Learn.view(CTX, p[1]);
     else if (p[0] === 'run' && p[1]) window.MeetingRun.viewRun(CTX, p[1]);
     else if (p[0] === 'tasks') viewTasks();
     else if (p[0] === 'settings') viewSettings();
