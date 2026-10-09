@@ -440,33 +440,62 @@
   // ======================= 宿題・依頼事項 =======================
   function viewTasks(mineOnly) {
     markNav(mineOnly ? 'mytasks' : 'tasks');
-    const where = S.storemode && S.scope ? `${orgOf(S.scope).name}｜` : '';
-    setTop(mineOnly ? '自分の宿題' : '宿題・依頼事項', where + '会議で決まった「誰が・何を・いつまで」');
-    const st = viewTasks.st || (viewTasks.st = { show: 'open', mine: false });
+    const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
+    setTop(mineOnly ? '自分の宿題' : '宿題・依頼事項', (scopeOrg ? `${scopeOrg.name}｜` : '') + '会議で決まった「誰が・何を・いつまで」');
+    const st = viewTasks.st || (viewTasks.st = { show: 'open', mine: false, org: '', group: true });
     if (mineOnly) st.mine = true;
-    const items = scoped().flatMap((m) => (m.tasks || []).map((t) => ({ m, t })))
+    const redraw = () => viewTasks(mineOnly);
+    const base = scoped().flatMap((m) => (m.tasks || []).map((t) => ({ m, t })))
       .filter(({ t }) => (st.show === 'open' ? !t.done : st.show === 'done' ? t.done : true))
       .filter(({ t }) => !st.mine || t.assigneeId === S.user.memberId)
       .sort((a, b) => (a.t.due || '9999').localeCompare(b.t.due || '9999'));
-    const tab = (k, label) => h('button', { class: 'orgchip' + (st.show === k ? ' on' : ''), onclick: () => { st.show = k; viewTasks(mineOnly); } }, label);
-    const mine = h('label', { class: 'row small', style: { gap: '6px', cursor: 'pointer' } },
-      h('input', { type: 'checkbox', checked: st.mine, onchange: (e) => { st.mine = e.target.checked; viewTasks(); } }), '自分の担当だけ');
-    if (mineOnly) mine.style.display = 'none';
-    const table = items.length ? h('div', { class: 'card', style: { overflow: 'auto' } }, h('table', { class: 'tbl' },
+    // 店舗の絞り込み（「店舗ごと」表示のときは左の店舗アイコンで選んだ店舗だけ）
+    const orgsWith = S.orgs.filter((o) => base.some(({ m }) => m.orgId === o.id));
+    if (st.org && !orgsWith.some((o) => o.id === st.org)) st.org = '';
+    const items = base.filter(({ m }) => scopeOrg || !st.org || m.orgId === st.org);
+
+    const tab = (k, label) => h('button', { class: 'orgchip' + (st.show === k ? ' on' : ''), onclick: () => { st.show = k; redraw(); } }, label);
+    const chk = (label, key, hide) => hide ? null : h('label', { class: 'row small', style: { gap: '6px', cursor: 'pointer' } },
+      h('input', { type: 'checkbox', checked: st[key], onchange: (e) => { st[key] = e.target.checked; redraw(); } }), label);
+    const orgChips = scopeOrg || orgsWith.length < 2 ? null : h('div', { class: 'orgchips', role: 'group', 'aria-label': '店舗・部署' },
+      h('button', { class: 'orgchip' + (st.org ? '' : ' on'), onclick: () => { st.org = ''; redraw(); } }, `すべて ${base.length}`),
+      orgsWith.map((o) => h('button', { class: 'orgchip' + (st.org === o.id ? ' on' : ''), onclick: () => { st.org = o.id; redraw(); } },
+        h('span', { class: 'dot', style: { background: o.color } }), `${o.name} ${base.filter(({ m }) => m.orgId === o.id).length}`)));
+
+    const table = (rows, showOrg) => h('table', { class: 'tbl' },
       h('thead', {}, h('tr', {}, ['', '宿題', '担当', '期限', '会議'].map((x) => h('th', { text: x })))),
-      h('tbody', {}, items.map(({ m, t }) => {
+      h('tbody', {}, rows.map(({ m, t }) => {
         const can = Perm.canCheckTask(S.user, m, t);
         const cb = h('input', { type: 'checkbox', checked: t.done, disabled: !can, 'aria-label': '完了' });
         cb.addEventListener('change', async () => {
           try { await setTaskDone(m, t.id, cb.checked); } catch (e) { toast('保存できませんでした'); }
-          viewTasks(mineOnly);
+          redraw();
         });
+        const when = fmtDate(m.date, false).replace(/^\d+年/, '');
         return h('tr', {}, h('td', {}, cb), h('td', { style: t.done ? { textDecoration: 'line-through', color: 'var(--text-3)' } : {}, text: t.text }),
           h('td', { text: t.assignee || '未定' }),
           h('td', { class: isOverdue(t) ? 'overdue' : '', text: t.due ? fmtDate(t.due, false) : '—' }),
-          h('td', {}, h('a', { href: '#/m/' + m.id }, h('span', { class: 'dot', style: { background: orgOf(m.orgId).color, marginRight: '6px' } }), `${orgOf(m.orgId).name} ${fmtDate(m.date, false).replace(/^\d+年/, '')}`)));
-      })))) : h('div', { class: 'card empty', text: '該当する宿題はありません' });
-    $view.replaceChildren(h('div', { class: 'row', style: { marginBottom: '14px' } }, tab('open', '未完了'), tab('done', '完了'), tab('all', 'すべて'), h('span', { class: 'spacer' }), mine), table);
+          h('td', {}, h('a', { href: '#/m/' + m.id }, showOrg ? h('span', { class: 'dot', style: { background: orgOf(m.orgId).color, marginRight: '6px' } }) : null,
+            showOrg ? `${orgOf(m.orgId).name} ${when}` : `${m.type || '会議'} ${when}`)));
+      })));
+    // 店舗ごとに分けて表示（店舗名・件数・期限切れの数を見出しに）
+    const grouped = !scopeOrg && !st.org && st.group;
+    let body;
+    if (!items.length) body = h('div', { class: 'card empty', text: '該当する宿題はありません' });
+    else if (grouped) body = S.orgs.filter((o) => items.some(({ m }) => m.orgId === o.id)).map((o) => {
+      const rows = items.filter(({ m }) => m.orgId === o.id);
+      const over = rows.filter(({ t }) => isOverdue(t)).length;
+      return h('div', { class: 'card', style: { overflow: 'auto', borderTop: `4px solid ${o.color || 'var(--accent)'}`, marginBottom: '14px' } },
+        h('div', { class: 'hd' }, h('span', { class: 'dot', style: { background: o.color } }), h('h3', { text: o.name }),
+          h('span', { class: 'small muted', text: `${rows.length}件` }), over ? h('span', { class: 'chip warn', text: `期限切れ ${over}` }) : null),
+        table(rows, false));
+    });
+    else body = h('div', { class: 'card', style: { overflow: 'auto' } }, table(items, !scopeOrg && !st.org));
+
+    $view.replaceChildren(...[
+      h('div', { class: 'row', style: { marginBottom: '10px' } }, tab('open', '未完了'), tab('done', '完了'), tab('all', 'すべて'), h('span', { class: 'spacer' }),
+        chk('店舗ごとに分ける', 'group', !!(scopeOrg || st.org)), chk('自分の担当だけ', 'mine', mineOnly)),
+      orgChips, body].flat().filter(Boolean));
   }
 
   // ======================= 名簿・権限 =======================
