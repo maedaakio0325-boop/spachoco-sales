@@ -92,6 +92,7 @@
     const meet = [sec(scopeOrg ? `${scopeOrg.name}の会議` : '会議'),
       item('list', '#/', '≡', '議事録'),
       isCast() ? null : item('tasks', '#/tasks', '✓', '宿題・依頼事項', openAll || ''),
+      isCast() ? null : item('linkmap', '#/linkmap', '⇄', '連携マップ'),
       canNew ? item('prep', '#/prep', '▶', '会議の準備・進行') : null,
       canNew ? item('new', '#/new', '＋', '新しい議事録') : null];
     const grow = [sec(isCast() ? 'わたし' : '成長'),
@@ -438,6 +439,14 @@
   }
 
   // ======================= 宿題・依頼事項 =======================
+  // 宿題の相談先（連携マップと同じ考え方）を小さな印で出す
+  function destChips(t) {
+    const dests = window.LinkMap.destsOf(S);
+    const keys = window.LinkMap.linksOf(t);
+    if (!keys.length) return h('span', { class: 'small muted', text: '店舗内' });
+    return keys.map((k) => dests.find((d) => d.key === k)).filter(Boolean)
+      .map((d) => h('span', { class: 'chip', style: { marginRight: '4px', borderColor: d.color, color: d.color }, text: d.name }));
+  }
   function viewTasks(mineOnly) {
     markNav(mineOnly ? 'mytasks' : 'tasks');
     const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
@@ -463,7 +472,7 @@
         h('span', { class: 'dot', style: { background: o.color } }), `${o.name} ${base.filter(({ m }) => m.orgId === o.id).length}`)));
 
     const table = (rows, showOrg) => h('table', { class: 'tbl' },
-      h('thead', {}, h('tr', {}, ['', '宿題', '担当', '期限', '会議'].map((x) => h('th', { text: x })))),
+      h('thead', {}, h('tr', {}, ['', '宿題', '担当', '期限', '相談先', '会議'].map((x) => h('th', { text: x })))),
       h('tbody', {}, rows.map(({ m, t }) => {
         const can = Perm.canCheckTask(S.user, m, t);
         const cb = h('input', { type: 'checkbox', checked: t.done, disabled: !can, 'aria-label': '完了' });
@@ -475,6 +484,7 @@
         return h('tr', {}, h('td', {}, cb), h('td', { style: t.done ? { textDecoration: 'line-through', color: 'var(--text-3)' } : {}, text: t.text }),
           h('td', { text: t.assignee || '未定' }),
           h('td', { class: isOverdue(t) ? 'overdue' : '', text: t.due ? fmtDate(t.due, false) : '—' }),
+          h('td', {}, h('a', { href: '#/linkmap', style: { textDecoration: 'none' } }, destChips(t))),
           h('td', {}, h('a', { href: '#/m/' + m.id }, showOrg ? h('span', { class: 'dot', style: { background: orgOf(m.orgId).color, marginRight: '6px' } }) : null,
             showOrg ? `${orgOf(m.orgId).name} ${when}` : `${m.type || '会議'} ${when}`)));
       })));
@@ -634,6 +644,7 @@
     else if (p[0] === 'tasks') viewTasks(p[1] === 'mine');
     else if (p[0] === 'settings') viewSettings();
     else if (p[0] === 'orgchart') window.OrgChart.view(CTX);
+    else if (p[0] === 'linkmap') window.LinkMap.view(CTX, p[1]);
     else viewList();
     window.scrollTo(0, 0);
   }
