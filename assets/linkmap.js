@@ -241,5 +241,5 @@
       body].filter(Boolean));
   }
 
-  window.LinkMap = { view, suggest, linksOf, destsOf, CATS, THEMES, themeOfTask, themeByKey };
+  window.LinkMap = { view, suggest, linksOf, destsOf, CATS, THEMES, OTHER, themeOfTask, themeByKey, themeKeyOf };
 })();

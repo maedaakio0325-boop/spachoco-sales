@@ -23,7 +23,8 @@
   const myOrgs = () => (roleOf(S.user.role).all ? S.orgs : S.orgs.filter((o) => (S.user.orgIds || []).includes(o.id)));
   const inScope = (m) => !S.storemode || !S.scope || m.orgId === S.scope;
   const scoped = () => visible().filter(inScope);
-  function setScope(id) { S.scope = id; pref('scope', id); S.filter.org = ''; refreshChrome(); route(); }
+  // 店舗アイコンを押したら、その店舗の「まとめ」を開く
+  function setScope(id) { S.scope = id; pref('scope', id); S.filter.org = ''; refreshChrome(); if (location.hash !== '#/home') location.hash = '#/home'; else route(); }
   function setStoreMode(on) { S.storemode = on; pref('storemode', on ? '1' : '0'); refreshChrome(); route(); }
 
   async function reload() {
@@ -68,7 +69,7 @@
     if (S.storemode && !S.scope && orgs.length && !roleOf(S.user.role).all) S.scope = orgs[0].id;
     document.body.classList.toggle('storemode', !!S.storemode);
     const mineOnly = (t) => !isCast() || t.assigneeId === S.user.memberId;
-    const openIn = (orgId) => visible().filter((m) => !orgId || m.orgId === orgId).reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done && mineOnly(t)).length, 0);
+    const openIn = (orgId) => (orgId && !isCast() && window.Home) ? window.Home.countFor(S, orgId) : visible().filter((m) => !orgId || m.orgId === orgId).reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done && mineOnly(t)).length, 0);
 
     const srv = (id, label, color, title) => {
       const n = openIn(id);
@@ -90,6 +91,7 @@
     const openAll = scoped().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done).length, 0);
     const openMine = scoped().reduce((n, m) => n + (m.tasks || []).filter((t) => !t.done && t.assigneeId === S.user.memberId).length, 0);
     const meet = [sec(scopeOrg ? `${scopeOrg.name}の会議` : '会議'),
+      item('home', '#/home', '◉', scopeOrg ? '店舗のまとめ' : '店舗のまとめ'),
       item('list', '#/', '≡', '議事録'),
       isCast() ? null : item('tasks', '#/tasks', '✓', '宿題・依頼事項', openAll || ''),
       isCast() ? null : item('board', '#/board', '▦', 'タスク管理'),
@@ -630,7 +632,7 @@
   }
 
   // 会議の準備・進行モード(meeting-run.js)に渡す道具
-  const CTX = { S, setTop, markNav, $view, orgOf, section, reload, refreshChrome, setTaskDone };
+  const CTX = { S, setTop, markNav, $view, orgOf, section, reload, refreshChrome, setTaskDone, setScope };
 
   // ======================= ルーター =======================
   function route() {
@@ -648,6 +650,7 @@
     else if (p[0] === 'orgchart') window.OrgChart.view(CTX);
     else if (p[0] === 'linkmap') window.LinkMap.view(CTX, p[1]);
     else if (p[0] === 'board') window.Board.view(CTX, p[1]);
+    else if (p[0] === 'home') window.Home.view(CTX);
     else viewList();
     window.scrollTo(0, 0);
   }
