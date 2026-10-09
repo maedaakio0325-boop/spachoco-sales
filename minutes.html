@@ -5,10 +5,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Old+Mincho:wght@600&family=Roboto+Mono:wght@400;500&display=swap">
 <script>
-// 本番の住所は https://spachoco-os.web.app 。GitHubの住所で開いたら移動する（サンプル表示 ?demo はそのまま）
-if (/github\.io$/.test(location.hostname) && !/[?&]demo/.test(location.search)) location.replace('https://spachoco-os.web.app/minutes.html' + location.search + location.hash);
+// 本番の住所は https://spachoco-os.firebaseapp.com 。GitHubや web.app で開いたら移動する（サンプル表示 ?demo はそのまま）
+if ((/github\.io$/.test(location.hostname) && !/[?&]demo/.test(location.search)) || location.hostname === 'spachoco-os.web.app') location.replace('https://spachoco-os.firebaseapp.com/minutes.html' + location.search + location.hash);
 </script>
-<link rel="stylesheet" href="assets/os.css?v=20261009b">
+<link rel="stylesheet" href="assets/os.css?v=20261009c">
 <style>
 /* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
    落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
@@ -256,13 +256,13 @@ window.addEventListener('unhandledrejection', function (e) { window.dispatchEven
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/firebase-config.js?v=20261009b"></script>
-<script src="assets/os-core.js?v=20261009b"></script>
-<script src="assets/minutes-demo.js?v=20261009b"></script>
-<script src="assets/meeting-templates.js?v=20261009b"></script>
-<script src="assets/meeting-run.js?v=20261009b"></script>
-<script src="assets/coach.js?v=20261009b"></script>
-<script src="assets/learn.js?v=20261009b"></script>
-<script src="assets/orgchart.js?v=20261009b"></script>
-<script src="assets/minutes.js?v=20261009b"></script>
+<script src="assets/firebase-config.js?v=20261009c"></script>
+<script src="assets/os-core.js?v=20261009c"></script>
+<script src="assets/minutes-demo.js?v=20261009c"></script>
+<script src="assets/meeting-templates.js?v=20261009c"></script>
+<script src="assets/meeting-run.js?v=20261009c"></script>
+<script src="assets/coach.js?v=20261009c"></script>
+<script src="assets/learn.js?v=20261009c"></script>
+<script src="assets/orgchart.js?v=20261009c"></script>
+<script src="assets/minutes.js?v=20261009c"></script>
 </body></html>
