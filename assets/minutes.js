@@ -620,7 +620,7 @@
       bd.append(h('div', { class: 'brand', style: { justifyContent: 'center' } }, h('div', { class: 'mark', text: 'SC' }), h('div', { style: { textAlign: 'left' } }, h('b', { text: 'SPACHOCO OS' }), h('span', { text: '議事録' }))),
         h('p', { class: 'muted small', text: 'スパチョコのGoogleアカウントでログインしてください。' }),
         h('button', { class: 'btn primary', style: { justifyContent: 'center' }, onclick: async () => {
-          try { await Session.signIn(); location.reload(); } catch (e) { toast('ログインできませんでした'); }
+          try { await Session.signIn(); location.reload(); } catch (e) { toast('ログインできませんでした（' + (e.code || e.message) + '）'); }
         } }, 'Googleでログイン'));
     } else {
       bd.append(h('h3', { style: { margin: 0 }, text: 'まだ名簿に登録されていません' }),
@@ -637,7 +637,7 @@
       await reload();
     } catch (e) {
       console.error(e);
-      $view.replaceChildren(h('div', { class: 'card empty', text: '読み込みに失敗しました。通信状況を確認して、再読み込みしてください。' }));
+      $view.replaceChildren(h('div', { class: 'card empty', text: '読み込みに失敗しました。通信状況を確認して、再読み込みしてください。（' + (e.code || e.message) + '）' }));
       return;
     }
     if (!S.user || S.user.unregistered) { gate(); return; }
