@@ -8,7 +8,7 @@
 // 本番の住所は https://spachoco-os.firebaseapp.com 。GitHubや web.app で開いたら移動する（サンプル表示 ?demo はそのまま）
 if ((/github\.io$/.test(location.hostname) && !/[?&]demo/.test(location.search)) || location.hostname === 'spachoco-os.web.app') location.replace('https://spachoco-os.firebaseapp.com/minutes.html' + location.search + location.hash);
 </script>
-<link rel="stylesheet" href="assets/os.css?v=20261009d">
+<link rel="stylesheet" href="assets/os.css?v=20261009e">
 <style>
 /* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
    落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
@@ -110,6 +110,17 @@ body.app-minutes .tasklist input{width:20px;height:20px}
 
 /* ===== 連携マップ ===== */
 a.orgchip{text-decoration:none;color:inherit}
+.lm-themes{display:grid;gap:14px}
+.lm-theme>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.lm-theme>summary::-webkit-details-marker{display:none}
+.lm-tree,.lm-tree ul{list-style:none;margin:0;padding:0}
+.lm-tree ul{margin-left:14px;padding-left:18px;border-left:2px solid var(--lm,var(--line));display:grid;gap:6px;margin-top:6px}
+.lm-tree>li{margin-bottom:12px}
+.lm-tree ul>li{position:relative}
+.lm-tree ul>li::before{content:"";position:absolute;left:-18px;top:22px;width:16px;border-top:2px solid var(--lm,var(--line))}
+.lm-issue{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.lm-tag{font-size:11px;font-weight:700;color:#fff;background:var(--lm,var(--accent));border-radius:6px;padding:2px 7px}
+.lm-src{font-size:11.5px;font-weight:500;color:var(--text-3)}
 .lm-map{position:relative;display:grid;grid-template-columns:minmax(150px,200px) 1fr;gap:56px;align-items:center;padding:8px 4px}
 .lm-lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
 .lm-lines path{fill:none;stroke-width:2;opacity:.55}
@@ -281,14 +292,14 @@ window.addEventListener('unhandledrejection', function (e) { window.dispatchEven
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/firebase-config.js?v=20261009d"></script>
-<script src="assets/os-core.js?v=20261009d"></script>
-<script src="assets/minutes-demo.js?v=20261009d"></script>
-<script src="assets/meeting-templates.js?v=20261009d"></script>
-<script src="assets/meeting-run.js?v=20261009d"></script>
-<script src="assets/coach.js?v=20261009d"></script>
-<script src="assets/learn.js?v=20261009d"></script>
-<script src="assets/orgchart.js?v=20261009d"></script>
-<script src="assets/linkmap.js?v=20261009d"></script>
-<script src="assets/minutes.js?v=20261009d"></script>
+<script src="assets/firebase-config.js?v=20261009e"></script>
+<script src="assets/os-core.js?v=20261009e"></script>
+<script src="assets/minutes-demo.js?v=20261009e"></script>
+<script src="assets/meeting-templates.js?v=20261009e"></script>
+<script src="assets/meeting-run.js?v=20261009e"></script>
+<script src="assets/coach.js?v=20261009e"></script>
+<script src="assets/learn.js?v=20261009e"></script>
+<script src="assets/orgchart.js?v=20261009e"></script>
+<script src="assets/linkmap.js?v=20261009e"></script>
+<script src="assets/minutes.js?v=20261009e"></script>
 </body></html>
