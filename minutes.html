@@ -8,7 +8,7 @@
 // 本番の住所は https://spachoco-os.firebaseapp.com 。GitHubや web.app で開いたら移動する（サンプル表示 ?demo はそのまま）
 if ((/github\.io$/.test(location.hostname) && !/[?&]demo/.test(location.search)) || location.hostname === 'spachoco-os.web.app') location.replace('https://spachoco-os.firebaseapp.com/minutes.html' + location.search + location.hash);
 </script>
-<link rel="stylesheet" href="assets/os.css?v=20261009c">
+<link rel="stylesheet" href="assets/os.css?v=20261009d">
 <style>
 /* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
    落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
@@ -107,6 +107,31 @@ body.app-minutes .tasklist input{width:20px;height:20px}
 .oc-role.r-manager{background:#E8F1EF;color:#2C6E68}
 .oc-ken{font-size:11px;color:#B7791F}
 @media print{ .orgchart .oc-grid{grid-template-columns:repeat(3,1fr)} .orgchart .oc-org,.orgchart .oc-node{break-inside:avoid;box-shadow:none} }
+
+/* ===== 連携マップ ===== */
+a.orgchip{text-decoration:none;color:inherit}
+.lm-map{position:relative;display:grid;grid-template-columns:minmax(150px,200px) 1fr;gap:56px;align-items:center;padding:8px 4px}
+.lm-lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.lm-lines path{fill:none;stroke-width:2;opacity:.55}
+.lm-root{position:relative;z-index:1;background:var(--accent);color:#fff;border-radius:16px;padding:14px;display:grid;gap:6px;text-align:center}
+.lm-root b{font-size:17px}
+.lm-stores{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}
+.lm-store{font-size:11px;background:rgba(255,255,255,.18);border-radius:999px;padding:2px 8px;display:inline-flex;gap:4px;align-items:center}
+.lm-branches{display:grid;gap:18px}
+.lm-branch{display:grid;grid-template-columns:minmax(150px,200px) 1fr;gap:44px;align-items:center}
+.lm-dept{position:relative;z-index:1;background:var(--surface);border:2px solid;border-radius:12px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.lm-leaves{display:grid;gap:6px}
+.lm-task{position:relative;z-index:1;display:grid;gap:2px;text-align:left;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:7px 10px;font:inherit;color:inherit;cursor:pointer;width:100%;min-height:44px}
+.lm-task:hover{box-shadow:var(--shadow-sm,0 1px 4px rgba(0,0,0,.08))}
+.lm-task .tx{font-size:13.5px;font-weight:600}
+.lm-task .meta{font-size:11.5px;color:var(--text-3)}
+.lm-task.over .meta{color:#C0392B;font-weight:600}
+.lm-task.done{opacity:.55}.lm-task.done .tx{text-decoration:line-through}
+.lm-road td{min-width:170px;vertical-align:top}.lm-road td .lm-task{margin-bottom:6px}
+.lm-road td.lm-dest{min-width:130px;font-weight:600;white-space:nowrap}
+.lm-road td.lm-overcol{background:rgba(192,57,43,.05)}
+.lm-dest .dot{margin-right:6px}
+@media (max-width:900px){ .lm-map,.lm-branch{grid-template-columns:1fr;gap:12px} .lm-lines{display:none} }
 /* ===== 店舗ごとの切り替え（左端の店舗アイコン列）===== */
 body.app-minutes .rail{flex-direction:row;padding:0;gap:0}
 body.app-minutes .rail .chan{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:14px 10px;overflow:auto}
@@ -256,13 +281,14 @@ window.addEventListener('unhandledrejection', function (e) { window.dispatchEven
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/firebase-config.js?v=20261009c"></script>
-<script src="assets/os-core.js?v=20261009c"></script>
-<script src="assets/minutes-demo.js?v=20261009c"></script>
-<script src="assets/meeting-templates.js?v=20261009c"></script>
-<script src="assets/meeting-run.js?v=20261009c"></script>
-<script src="assets/coach.js?v=20261009c"></script>
-<script src="assets/learn.js?v=20261009c"></script>
-<script src="assets/orgchart.js?v=20261009c"></script>
-<script src="assets/minutes.js?v=20261009c"></script>
+<script src="assets/firebase-config.js?v=20261009d"></script>
+<script src="assets/os-core.js?v=20261009d"></script>
+<script src="assets/minutes-demo.js?v=20261009d"></script>
+<script src="assets/meeting-templates.js?v=20261009d"></script>
+<script src="assets/meeting-run.js?v=20261009d"></script>
+<script src="assets/coach.js?v=20261009d"></script>
+<script src="assets/learn.js?v=20261009d"></script>
+<script src="assets/orgchart.js?v=20261009d"></script>
+<script src="assets/linkmap.js?v=20261009d"></script>
+<script src="assets/minutes.js?v=20261009d"></script>
 </body></html>
