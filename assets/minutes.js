@@ -92,11 +92,13 @@
     const meet = [sec(scopeOrg ? `${scopeOrg.name}の会議` : '会議'),
       item('list', '#/', '≡', '議事録'),
       isCast() ? null : item('tasks', '#/tasks', '✓', '宿題・依頼事項', openAll || ''),
+      isCast() ? null : item('board', '#/board', '▦', 'タスク管理'),
       isCast() ? null : item('linkmap', '#/linkmap', '⇄', '連携マップ'),
       canNew ? item('prep', '#/prep', '▶', '会議の準備・進行') : null,
       canNew ? item('new', '#/new', '＋', '新しい議事録') : null];
     const grow = [sec(isCast() ? 'わたし' : '成長'),
       isCast() ? item('mytasks', '#/tasks/mine', '✓', '自分の宿題', openMine || '') : null,
+      isCast() ? item('myboard', '#/board/mine', '▦', '自分のタスク') : null,
       item('coach', '#/coach', '✦', 'AIに相談（壁打ち）'),
       item('learn', '#/learn', '✎', 'マニュアルで学ぶ'),
       item('karte', '#/karte', '♡', 'カルテ')];
@@ -112,7 +114,7 @@
         h('button', { class: S.storemode ? 'on' : '', onclick: () => setStoreMode(true) }, '店舗ごと'),
         h('button', { class: S.storemode ? '' : 'on', onclick: () => setStoreMode(false) }, 'まとめて')));
     const key = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'list';
-    markNav(key === 'm' ? 'list' : key === 'tasks' && location.hash.includes('/mine') ? 'mytasks' : key === 'run' ? 'prep' : key);
+    markNav(key === 'm' ? 'list' : key === 'tasks' && location.hash.includes('/mine') ? 'mytasks' : key === 'board' && location.hash.includes('/mine') ? 'myboard' : key === 'run' ? 'prep' : key);
   }
   function refreshChrome() {
     renderRail();
@@ -142,7 +144,7 @@
     markNav('list');
     const canNew = S.orgs.some((o) => Perm.canCreateIn(S.user, o.id));
     setTop(S.storemode && S.scope ? `${orgOf(S.scope).name}の議事録` : '議事録一覧', `${S.user.name} として表示`, canNew ? [h('a', { class: 'btn primary', href: '#/new', text: '＋ 新しい議事録' })] : []);
-    const all = scoped();
+    const all = scoped().filter((m) => m.kind !== 'board'); // タスクボードは議事録ではないので一覧に出さない
     const f = S.filter;
     const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
     const months = [...new Set(all.map((m) => m.date.slice(0, 7)))].sort().reverse();
@@ -228,7 +230,7 @@
     ]);
 
     // 同じ店舗・部署の前回会議の、未完了の宿題
-    const prev = S.meetings.filter((x) => x.orgId === m.orgId && (x.date + x.start) < (m.date + m.start) && Perm.canView(S.user, x))[0];
+    const prev = S.meetings.filter((x) => x.kind !== 'board' && x.orgId === m.orgId && (x.date + x.start) < (m.date + m.start) && Perm.canView(S.user, x))[0];
     const prevOpen = prev ? (prev.tasks || []).filter((t) => !t.done) : [];
 
     const aside = h('aside', { class: 'grid' },
@@ -485,7 +487,7 @@
           h('td', { text: t.assignee || '未定' }),
           h('td', { class: isOverdue(t) ? 'overdue' : '', text: t.due ? fmtDate(t.due, false) : '—' }),
           h('td', {}, h('a', { href: '#/linkmap', style: { textDecoration: 'none' } }, destChips(t))),
-          h('td', {}, h('a', { href: '#/m/' + m.id }, showOrg ? h('span', { class: 'dot', style: { background: orgOf(m.orgId).color, marginRight: '6px' } }) : null,
+          h('td', {}, m.kind === 'board' ? h('a', { href: '#/board', text: (showOrg ? orgOf(m.orgId).name + ' ' : '') + 'タスク' }) : h('a', { href: '#/m/' + m.id }, showOrg ? h('span', { class: 'dot', style: { background: orgOf(m.orgId).color, marginRight: '6px' } }) : null,
             showOrg ? `${orgOf(m.orgId).name} ${when}` : `${m.type || '会議'} ${when}`)));
       })));
     // 店舗ごとに分けて表示（店舗名・件数・期限切れの数を見出しに）
@@ -645,6 +647,7 @@
     else if (p[0] === 'settings') viewSettings();
     else if (p[0] === 'orgchart') window.OrgChart.view(CTX);
     else if (p[0] === 'linkmap') window.LinkMap.view(CTX, p[1]);
+    else if (p[0] === 'board') window.Board.view(CTX, p[1]);
     else viewList();
     window.scrollTo(0, 0);
   }

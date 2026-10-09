@@ -8,7 +8,7 @@
 // 本番の住所は https://spachoco-os.firebaseapp.com 。GitHubや web.app で開いたら移動する（サンプル表示 ?demo はそのまま）
 if ((/github\.io$/.test(location.hostname) && !/[?&]demo/.test(location.search)) || location.hostname === 'spachoco-os.web.app') location.replace('https://spachoco-os.firebaseapp.com/minutes.html' + location.search + location.hash);
 </script>
-<link rel="stylesheet" href="assets/os.css?v=20261009e">
+<link rel="stylesheet" href="assets/os.css?v=20261009f">
 <style>
 /* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
    落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
@@ -143,6 +143,20 @@ a.orgchip{text-decoration:none;color:inherit}
 .lm-road td.lm-overcol{background:rgba(192,57,43,.05)}
 .lm-dest .dot{margin-right:6px}
 @media (max-width:900px){ .lm-map,.lm-branch{grid-template-columns:1fr;gap:12px} .lm-lines{display:none} }
+
+/* ===== タスク管理（ボード） ===== */
+.bd-board{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px;overflow-x:auto;align-items:start}
+.bd-col{background:var(--surface-2);border-radius:12px;padding:10px;display:grid;gap:8px;min-height:120px}
+.bd-colhd{display:flex;align-items:center;justify-content:space-between;padding:2px 4px}
+.bd-card{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px;display:grid;gap:6px;cursor:pointer}
+.bd-card.over{box-shadow:inset 0 0 0 1px rgba(192,57,43,.35)}
+.bd-card .tx{font-weight:600;font-size:14px;line-height:1.45}
+.bd-card .meta{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:11.5px;color:var(--text-3);align-items:center}
+.bd-card .meta .chip{font-size:10.5px;padding:1px 7px}
+.bd-card .mv{display:flex;justify-content:space-between;gap:6px}
+.bd-card .mv .btn{min-height:34px}
+.bd-fields>*{width:auto;flex:1 1 150px}
+@media (max-width:900px){ .bd-board{grid-template-columns:repeat(4,minmax(240px,80vw))} }
 /* ===== 店舗ごとの切り替え（左端の店舗アイコン列）===== */
 body.app-minutes .rail{flex-direction:row;padding:0;gap:0}
 body.app-minutes .rail .chan{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:14px 10px;overflow:auto}
@@ -292,14 +306,15 @@ window.addEventListener('unhandledrejection', function (e) { window.dispatchEven
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/firebase-config.js?v=20261009e"></script>
-<script src="assets/os-core.js?v=20261009e"></script>
-<script src="assets/minutes-demo.js?v=20261009e"></script>
-<script src="assets/meeting-templates.js?v=20261009e"></script>
-<script src="assets/meeting-run.js?v=20261009e"></script>
-<script src="assets/coach.js?v=20261009e"></script>
-<script src="assets/learn.js?v=20261009e"></script>
-<script src="assets/orgchart.js?v=20261009e"></script>
-<script src="assets/linkmap.js?v=20261009e"></script>
-<script src="assets/minutes.js?v=20261009e"></script>
+<script src="assets/firebase-config.js?v=20261009f"></script>
+<script src="assets/os-core.js?v=20261009f"></script>
+<script src="assets/minutes-demo.js?v=20261009f"></script>
+<script src="assets/meeting-templates.js?v=20261009f"></script>
+<script src="assets/meeting-run.js?v=20261009f"></script>
+<script src="assets/coach.js?v=20261009f"></script>
+<script src="assets/learn.js?v=20261009f"></script>
+<script src="assets/orgchart.js?v=20261009f"></script>
+<script src="assets/linkmap.js?v=20261009f"></script>
+<script src="assets/board.js?v=20261009f"></script>
+<script src="assets/minutes.js?v=20261009f"></script>
 </body></html>

@@ -129,7 +129,7 @@
             Array.isArray(t.links) || t.theme ? h('button', { class: 'btn ghost', onclick: async () => {
               try { await saveTask(ctx, m, t.id, { links: null, theme: null }); toast('文面からの提案に戻しました'); box.remove(); view(ctx, tab); } catch (e) { toast('保存できませんでした'); }
             } }, '提案に戻す') : null,
-            h('a', { class: 'btn ghost', href: '#/m/' + m.id, text: '議事録を開く' }))
+            h('a', { class: 'btn ghost', href: m.kind === 'board' ? '#/board' : '#/m/' + m.id, text: m.kind === 'board' ? 'タスク管理を開く' : '議事録を開く' }))
             : h('div', { class: 'small muted', text: '付け替えられるのは、その会議の編集者と宿題の担当者です' })));
       document.querySelectorAll('.lm-panel').forEach((x) => x.remove());
       box.classList.add('lm-panel');
