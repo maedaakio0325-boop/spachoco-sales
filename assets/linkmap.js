@@ -19,6 +19,28 @@
   ];
   const NONE = { key: 'none', label: '店舗内で完結', name: '店舗内で完結', color: '#8A8A9E', ask: '他部署の手を借りずに進められるもの' };
 
+  // 課題・宿題のテーマ（グループ）。文面に入っている言葉の数で振り分ける
+  const THEMES = [
+    { key: 'sales', label: '売上・数字', color: '#2C6E68', words: ['売上', '数字', '目標', '締め', '単価', 'KPI', '件数', '本数', '指名', 'ランキング', '実績'] },
+    { key: 'acq', label: '集客・新規', color: '#C2410C', words: ['集客', '新規', '初回', '案内所', 'キャッチ', '呼び込み', '種まき', '予定', '同伴', '枝', '紹介'] },
+    { key: 'cust', label: '顧客・再来店', color: '#B83280', words: ['顧客', 'お客様', '再来店', 'リピート', '飲み直し', '来店', 'クレーム', '満足', 'カルテ'] },
+    { key: 'edu', label: '教育・育成', color: '#2B6CB0', words: ['教育', '育成', '研修', '新人', 'マニュアル', '指導', '面談', 'バディ', '練習', 'ロールプレイ', '夢ノート'] },
+    { key: 'hr', label: '採用・人', color: '#0E9F6E', words: ['採用', '求人', '面接', '入店', '体験', '離職', '退店', '人員', '人数'] },
+    { key: 'team', label: 'チーム・組織', color: '#7C4DFF', words: ['チーム', '組織', '幹部', '役割', '担当', '体制', '報連相', '連携', '相談先', '承認', '評価', '昇格'] },
+    { key: 'ops', label: '店内オペレーション', color: '#B7791F', words: ['清掃', '掃除', '出勤', '遅刻', 'シフト', '備品', '在庫', '卓', 'ヘルプ', '閉め', '残る', '手順', '作業', 'LINE'] },
+    { key: 'event', label: 'イベント・企画', color: '#D53F8C', words: ['イベント', '企画', 'バースデー', '周年', 'コスプレ', '表彰', 'シャンパン', 'タワー', 'キャンペーン'] },
+    { key: 'pr', label: '発信・SNS', color: '#DD6B20', words: ['SNS', '告知', '投稿', 'インスタ', 'TikTok', '配信', '動画', '宣材', '撮影', '更新'] },
+    { key: 'rule', label: 'ルール・規律', color: '#4A4A5C', words: ['ルール', '規律', 'ガイドライン', 'コンプラ', '禁止', '同意', '徹底', '時間', '経費', 'フロー'] },
+  ];
+  const OTHER = { key: 'other', label: 'そのほか', color: '#8A8A9E', words: [] };
+  function themeKeyOf(text) {
+    let best = null, n = 0;
+    THEMES.forEach((th) => { const c = th.words.filter((w) => (text || '').includes(w)).length; if (c > n) { n = c; best = th.key; } });
+    return best || 'other';
+  }
+  const themeOfTask = (t) => t.theme || themeKeyOf(t.text);
+  const themeByKey = (k) => THEMES.find((x) => x.key === k) || OTHER;
+
   // 名簿の部署（kind: dept）と、相談先の種類をつなぐ
   function destsOf(S) {
     const depts = S.orgs.filter((o) => o.kind === 'dept');
@@ -49,10 +71,10 @@
   }
   const BUCKETS = [['over', '期限切れ'], ['w0', '今週'], ['w1', '来週'], ['m0', '今月中'], ['later', '来月以降'], ['none', '期限なし']];
 
-  async function saveLinks(ctx, m, taskId, links) {
+  async function saveTask(ctx, m, taskId, fields) {
     const fresh = await OS.Store.get('meetings', m.id);
     if (!fresh) return;
-    const tasks = (fresh.tasks || []).map((x) => (x.id === taskId ? { ...x, links } : x));
+    const tasks = (fresh.tasks || []).map((x) => (x.id === taskId ? { ...x, ...fields } : x));
     await OS.Store.patch('meetings', m.id, { tasks });
     await ctx.reload(); ctx.refreshChrome();
   }
@@ -60,7 +82,7 @@
   function view(ctx, tab) {
     const { S, setTop, markNav, $view, orgOf } = ctx;
     markNav('linkmap');
-    tab = tab || 'map';
+    tab = tab || 'theme';
     const st = view.st || (view.st = { open: true });
     const scopeOrg = S.storemode && S.scope ? orgOf(S.scope) : null;
     const dests = destsOf(S);
@@ -72,7 +94,7 @@
     const keysOf = (t) => { const k = linksOf(t); return k.length ? k : ['none']; };
 
     const tabs = h('div', { class: 'row', style: { marginBottom: '12px' } },
-      [['map', 'マップ'], ['road', 'ロードマップ'], ['guide', '相談先ガイド']].map(([k, label]) =>
+      [['theme', 'テーマ別'], ['map', '部署マップ'], ['road', 'ロードマップ'], ['guide', '相談先ガイド']].map(([k, label]) =>
         h('a', { class: 'orgchip' + (tab === k ? ' on' : ''), href: '#/linkmap/' + k, text: label })),
       h('span', { class: 'spacer' }),
       tab === 'guide' ? null : h('label', { class: 'row small', style: { gap: '6px', cursor: 'pointer' } },
@@ -83,11 +105,15 @@
     function editPanel(m, t) {
       const can = OS.Perm.canEdit(S.user, m) || t.assigneeId === S.user.memberId;
       const cur = new Set(linksOf(t));
+      const themeSel = h('select', { disabled: !can, 'aria-label': 'テーマ' }, [...THEMES, OTHER].map((th) => h('option', { value: th.key, selected: th.key === themeOfTask(t), text: th.label })));
       const box = h('div', { class: 'card', style: { position: 'fixed', right: '16px', bottom: '16px', width: 'min(420px, calc(100vw - 32px))', zIndex: 60, boxShadow: 'var(--shadow)' } },
-        h('div', { class: 'hd' }, h('h3', { text: '相談先の部署' }), h('span', { class: 'spacer' }), h('button', { class: 'btn ghost sm', onclick: () => box.remove() }, '閉じる')),
+        h('div', { class: 'hd' }, h('h3', { text: 'テーマと相談先' }), h('span', { class: 'spacer' }), h('button', { class: 'btn ghost sm', onclick: () => box.remove() }, '閉じる')),
         h('div', { class: 'bd grid', style: { gap: '10px' } },
           h('div', { style: { fontWeight: 600 }, text: t.text }),
           h('div', { class: 'small muted', text: `${orgOf(m.orgId).name}｜${t.assignee || '担当未定'}｜${t.due ? '期限 ' + fmtDate(t.due, false) : '期限なし'}` }),
+          h('div', { class: 'row', style: { gap: '8px' } }, h('b', { class: 'small', text: 'テーマ' }), themeSel,
+            h('span', { class: 'small muted', text: t.theme ? '付け替え済み' : '文面から提案' })),
+          h('b', { class: 'small', text: '相談先の部署' }),
           h('div', { class: 'small', text: Array.isArray(t.links) ? '付け替え済み' : `文面からの提案：${suggest(t).map((k) => destOf(k).name).join('・') || 'なし（店舗内で完結）'}` }),
           h('div', { class: 'grid', style: { gap: '6px' } }, dests.map((d) => {
             const cb = h('input', { type: 'checkbox', checked: cur.has(d.key), disabled: !can });
@@ -97,10 +123,11 @@
           })),
           can ? h('div', { class: 'row' },
             h('button', { class: 'btn primary', onclick: async () => {
-              try { await saveLinks(ctx, m, t.id, [...cur]); toast('相談先を保存しました'); box.remove(); view(ctx, tab); } catch (e) { toast('保存できませんでした'); }
+              const th = themeSel.value === themeKeyOf(t.text) && !t.theme ? null : themeSel.value;
+              try { await saveTask(ctx, m, t.id, { links: [...cur], theme: th }); toast('保存しました'); box.remove(); view(ctx, tab); } catch (e) { toast('保存できませんでした'); }
             } }, '保存'),
-            Array.isArray(t.links) ? h('button', { class: 'btn ghost', onclick: async () => {
-              try { await saveLinks(ctx, m, t.id, null); toast('文面からの提案に戻しました'); box.remove(); view(ctx, tab); } catch (e) { toast('保存できませんでした'); }
+            Array.isArray(t.links) || t.theme ? h('button', { class: 'btn ghost', onclick: async () => {
+              try { await saveTask(ctx, m, t.id, { links: null, theme: null }); toast('文面からの提案に戻しました'); box.remove(); view(ctx, tab); } catch (e) { toast('保存できませんでした'); }
             } }, '提案に戻す') : null,
             h('a', { class: 'btn ghost', href: '#/m/' + m.id, text: '議事録を開く' }))
             : h('div', { class: 'small muted', text: '付け替えられるのは、その会議の編集者と宿題の担当者です' })));
@@ -117,7 +144,43 @@
     };
 
     let body;
-    if (tab === 'guide') {
+    if (tab === 'theme') {
+      // テーマ → 課題（議事録の「課題」）→ 宿題。同じ会議で同じテーマの宿題を、その課題の下に置く
+      const mtgs = S.meetings.filter((m) => OS.Perm.canView(S.user, m) && (!scopeOrg || m.orgId === scopeOrg.id))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const issues = mtgs.flatMap((m) => (m.issues || []).filter(Boolean).map((text, i) => ({ m, text, key: themeKeyOf(text), id: m.id + ':' + i })));
+      const used = [...THEMES, OTHER].filter((th) => issues.some((x) => x.key === th.key) || items.some(({ t }) => themeOfTask(t) === th.key));
+      if (!used.length) body = h('div', { class: 'card empty', text: '課題・宿題はまだありません' });
+      else body = h('div', { class: 'lm-themes' }, used.map((th) => {
+        const tks = items.filter(({ t }) => themeOfTask(t) === th.key);
+        const iss = issues.filter((x) => x.key === th.key);
+        const placed = new Set();
+        const issueNodes = iss.map((x) => {
+          const kids = tks.filter(({ m }) => m.id === x.m.id);
+          kids.forEach(({ t }) => placed.add(t.id + x.m.id));
+          if (st.open && !kids.length && x.m.date < (mtgs.find((mm) => mm.orgId === x.m.orgId) || x.m).date) return null; // 古い会議の、宿題がない課題は省く
+          return h('li', {},
+            h('div', { class: 'lm-issue' }, h('span', { class: 'lm-tag', text: '課題' }), h('span', { text: x.text }),
+              h('a', { class: 'lm-src', href: '#/m/' + x.m.id, text: `${scopeOrg ? '' : orgOf(x.m.orgId).name + ' '}${fmtDate(x.m.date, false).replace(/^\d+年/, '')}` }),
+              kids.length ? null : h('span', { class: 'chip warn', text: '宿題が決まっていない' })),
+            kids.length ? h('ul', {}, kids.map(({ m, t }) => h('li', {}, chip(m, t, !scopeOrg)))) : null);
+        }).filter(Boolean);
+        const loose = tks.filter(({ m, t }) => !placed.has(t.id + m.id));
+        const over = tks.filter(({ t }) => !t.done && t.due && t.due < today()).length;
+        const noTask = issueNodes.filter((li) => li.querySelector('.chip.warn')).length;
+        const node = h('details', { class: 'card lm-theme', open: true, style: { borderTop: `4px solid ${th.color}` } },
+          h('summary', { class: 'hd' }, h('span', { class: 'dot', style: { background: th.color } }), h('h3', { text: th.label }),
+            h('span', { class: 'small muted', text: `課題 ${issueNodes.length}・宿題 ${tks.length}` }),
+            over ? h('span', { class: 'chip warn', text: `期限切れ ${over}` }) : null,
+            noTask ? h('span', { class: 'chip', text: `宿題なしの課題 ${noTask}` }) : null),
+          h('div', { class: 'bd' }, h('ul', { class: 'lm-tree' },
+            issueNodes,
+            loose.length ? h('li', {}, h('div', { class: 'lm-issue' }, h('span', { class: 'lm-tag', text: '宿題' }), h('span', { class: 'muted', text: '課題にひもづかない宿題' })),
+              h('ul', {}, loose.map(({ m, t }) => h('li', {}, chip(m, t, !scopeOrg))))) : null)));
+        node.style.setProperty('--lm', th.color); // 枝の線とラベルをテーマの色に
+        return node;
+      }));
+    } else if (tab === 'guide') {
       body = h('div', { class: 'grid', style: { gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))' } },
         [...dests, NONE].map((d) => h('div', { class: 'card', style: { borderTop: `4px solid ${d.color}` } },
           h('div', { class: 'hd' }, h('span', { class: 'dot', style: { background: d.color } }), h('h3', { text: d.name }),
@@ -174,9 +237,9 @@
       window.addEventListener('resize', draw);
     }
     $view.replaceChildren(...[tabs,
-      tab === 'guide' ? null : h('div', { class: 'small muted', style: { margin: '-4px 0 10px' }, text: '宿題を押すと、相談先の部署を付け替えられます。相談先は宿題の文面から自動で提案しています。' }),
+      tab === 'guide' ? null : h('div', { class: 'small muted', style: { margin: '-4px 0 10px' }, text: tab === 'theme' ? '議事録の「課題」と「宿題」を、文面からテーマ別に分けています。宿題を押すと、テーマと相談先を付け替えられます。' : '宿題を押すと、相談先の部署を付け替えられます。相談先は宿題の文面から自動で提案しています。' }),
       body].filter(Boolean));
   }
 
-  window.LinkMap = { view, suggest, linksOf, destsOf, CATS };
+  window.LinkMap = { view, suggest, linksOf, destsOf, CATS, THEMES, themeOfTask, themeByKey };
 })();
