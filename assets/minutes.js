@@ -100,7 +100,7 @@
       item('learn', '#/learn', '✎', 'マニュアルで学ぶ'),
       item('karte', '#/karte', '♡', 'カルテ')];
     const apps = [sec('スパチョコのアプリ'),
-      level() >= 60 ? h('a', { class: 'navitem', href: 'index.html' }, h('span', { class: 'ic', text: '¥' }), '売上') : null,
+      level() >= 60 ? h('a', { class: 'navitem', href: 'https://maedaakio0325-boop.github.io/spachoco-sales/index.html' }, h('span', { class: 'ic', text: '¥' }), '売上') : null,
       soon('￥', '給料（準備中）'), soon('☆', '夢ノート（準備中）'), level() >= 60 ? soon('◎', '統括（準備中）') : null];
     const admin = level() >= 60 ? [sec('管理'), item('orgchart', '#/orgchart', '⌘', '組織図'), item('settings', '#/settings', '⚙', '名簿・権限')] : [];
     document.getElementById('navBox').replaceChildren(...(isCast() ? [grow, meet, apps] : [meet, grow, apps, admin]).flat().filter(Boolean));
