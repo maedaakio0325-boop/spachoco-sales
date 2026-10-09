@@ -167,12 +167,18 @@
     cloud: true,
     async waitAuth() {
       const auth = global.firebase.auth();
+      try { await auth.getRedirectResult(); } catch (e) { console.error(e); }
       return new Promise((res) => { const off = auth.onAuthStateChanged((u) => { off(); res(u); }); });
     },
     async signIn() {
       const p = new global.firebase.auth.GoogleAuthProvider();
       p.setCustomParameters({ prompt: 'select_account' });
-      await global.firebase.auth().signInWithPopup(p);
+      // iPhoneのSafariなどでポップアップが使えないときは、画面を切り替えてログインする
+      try { await global.firebase.auth().signInWithPopup(p); }
+      catch (e) {
+        if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment', 'auth/web-storage-unsupported', 'auth/internal-error'].includes(e.code)) await global.firebase.auth().signInWithRedirect(p);
+        else throw e;
+      }
     },
     async signOut() { await global.firebase.auth().signOut(); },
     // 戻り値: null(未ログイン) / {unregistered:true, email} / ユーザー

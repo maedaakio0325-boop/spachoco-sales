@@ -4,7 +4,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Zen+Old+Mincho:wght@600&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="assets/os.css">
+<link rel="stylesheet" href="assets/os.css?v=20261009">
 <style>
 /* ===== 議事録アプリのテーマ（売上アプリと見分けるための独自デザイン） =====
    落ち着いた資料風：生成りの紙色 × 深い青緑。会議中はダークの「ステージ」表示。 */
@@ -244,16 +244,21 @@ details.tr pre{white-space:pre-wrap;font-family:var(--sans);font-size:12.5px;max
     <main class="page" id="view"></main>
   </div>
 </div>
+<script>
+// 開けないときに原因が画面でわかるように、エラーを下に表示する
+window.addEventListener('error', function (e) { var d = document.getElementById('errBox'); if (!d) { d = document.createElement('div'); d.id = 'errBox'; d.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:999;background:#7f1d1d;color:#fff;padding:10px 12px;border-radius:10px;font:13px/1.5 sans-serif;white-space:pre-wrap'; document.body.appendChild(d); } d.textContent = '表示エラー（この画面をスクショして送ってください）\n' + (e.message || '') + '\n' + (e.filename || '').split('/').pop() + ':' + (e.lineno || ''); });
+window.addEventListener('unhandledrejection', function (e) { window.dispatchEvent(new ErrorEvent('error', { message: String(e.reason && (e.reason.code || e.reason.message) || e.reason) })); });
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="assets/firebase-config.js"></script>
-<script src="assets/os-core.js"></script>
-<script src="assets/minutes-demo.js"></script>
-<script src="assets/meeting-templates.js"></script>
-<script src="assets/meeting-run.js"></script>
-<script src="assets/coach.js"></script>
-<script src="assets/learn.js"></script>
-<script src="assets/orgchart.js"></script>
-<script src="assets/minutes.js"></script>
+<script src="assets/firebase-config.js?v=20261009"></script>
+<script src="assets/os-core.js?v=20261009"></script>
+<script src="assets/minutes-demo.js?v=20261009"></script>
+<script src="assets/meeting-templates.js?v=20261009"></script>
+<script src="assets/meeting-run.js?v=20261009"></script>
+<script src="assets/coach.js?v=20261009"></script>
+<script src="assets/learn.js?v=20261009"></script>
+<script src="assets/orgchart.js?v=20261009"></script>
+<script src="assets/minutes.js?v=20261009"></script>
 </body></html>
